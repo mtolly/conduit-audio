@@ -22,10 +22,24 @@ sourceSnd fp = let
   source = do
     h <- liftIO $ Snd.openFile fp Snd.ReadMode Snd.defaultInfo
     let info = Snd.hInfo h
-    when (r /= fromIntegral (Snd.samplerate info)) $
-      error "sourceSnd: incorrect sample rate"
-    when (c /= fromIntegral (Snd.channels info)) $
-      error "sourceSnd: incorrect number of channels"
+    when (r /= fromIntegral (Snd.samplerate info)) $ error $ unwords
+      [ "Data.Conduit.Audio.Sndfile.sourceSnd: file"
+      , fp
+      , "has sample rate"
+      , show $ Snd.samplerate info
+      , "Hz but tried to read as"
+      , show r
+      , "Hz"
+      ]
+    when (c /= fromIntegral (Snd.channels info)) $ error $ unwords
+      [ "Data.Conduit.Audio.Sndfile.sourceSnd: file"
+      , fp
+      , "has"
+      , show $ Snd.channels info
+      , "channels but tried to read as"
+      , show c
+      , "channels"
+      ]
     fix $ \loop -> liftIO (Snd.hGetBuffer h chunkSize) >>= \case
       Nothing -> liftIO $ Snd.hClose h
       Just buf -> do
