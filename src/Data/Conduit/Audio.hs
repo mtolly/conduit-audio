@@ -94,7 +94,18 @@ dropStart s = C.await >>= \case
       GT -> dropStart $ s - len
 
 fadeIn :: (Monad m) => Samples -> C.Conduit Audio m Audio
-fadeIn = undefined
+fadeIn samps = let
+  go i = if i >= samps
+    then CL.map id
+    else C.await >>= \case
+      Nothing -> return ()
+      Just chunk@(Audio vs) -> let
+        fader :: V.Vector Float
+        fader = V.generate (fromIntegral $ audioLength chunk) $ \j ->
+          min 1 $ fromIntegral j / fromIntegral samps
+        faded = Audio $ map (V.zipWith (*) fader) vs
+        in C.yield faded >> go (i + audioLength chunk)
+  in go 0
 
 fadeOut :: (Monad m) => Samples -> C.Conduit Audio m Audio
 fadeOut = undefined
