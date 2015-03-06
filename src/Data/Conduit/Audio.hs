@@ -1,63 +1,44 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE LambdaCase #-}
 module Data.Conduit.Audio where
 
-import GHC.TypeLits
 import qualified Data.Vector.Storable as V
 import qualified Data.Conduit as C
 import Data.Conduit ((=$=))
 import qualified Data.Conduit.List as CL
 import Data.Conduit.Internal (zipSources)
-import Data.Proxy
 import Control.Monad (replicateM_, forever)
 import Data.Maybe (fromMaybe)
 
-newtype Audio (r :: Nat) (c :: Nat) = Audio { audioData :: [V.Vector Float] }
+newtype Audio = Audio { audioData :: [V.Vector Float] }
 
 type Seconds  = Double
 type Samples  = Integer
 type Channels = Integer
 
-rate :: (KnownNat r) => Audio r c -> Samples
-rate = let
-  rateProxy :: Audio r c -> Proxy r
-  rateProxy _ = Proxy
-  in natVal . rateProxy
+audioLength :: Audio -> Samples
+audioLength (Audio vs) = fromIntegral $ V.length $ head vs
 
-channels :: (KnownNat c) => Audio r c -> Channels
-channels = natVal
+silence :: Samples -> Channels -> Audio
+silence samps chans =
+  Audio $ replicate (fromIntegral chans) $ V.replicate (fromIntegral samps) 0
 
-silenceSamples :: (KnownNat r, KnownNat c) => Samples -> Audio r c
-silenceSamples samps = let
-  o = Audio $ replicate (fromIntegral $ channels o) $ V.replicate (fromIntegral samps) 0
-  in o
-
-silenceSecs :: (KnownNat r, KnownNat c) => Seconds -> Audio r c
-silenceSecs secs = let
-  o = silenceSamples samps
-  samps = floor $ secs * fromIntegral (rate o)
-  in o
-
-silent :: (Monad m, KnownNat r, KnownNat c) => Seconds -> C.Source m (Audio r c)
-silent secs = let
-  (fullSecs, partSecs) = properFraction secs
-  fullSec = silenceSamples $ rate fullSec
-  partSec = silenceSecs partSecs
+silent :: (Monad m) => Samples -> Channels -> C.Source m Audio
+silent samps chans = let
+  chunkSize = 10000
+  (q, r) = quotRem samps chunkSize
+  fullChunk = silence chunkSize chans
+  partChunk = silence r chans
   in do
-    replicateM_ fullSecs $ C.yield fullSec
-    C.yield partSec
+    replicateM_ (fromIntegral q) $ C.yield fullChunk
+    C.yield partChunk
 
-merge :: (Monad m) =>
-  C.Source m (Audio r c1) -> C.Source m (Audio r c2) -> C.Source m (Audio r (c1 + c2))
+merge :: (Monad m) => C.Source m Audio -> C.Source m Audio -> C.Source m Audio
 merge x y = let
   pairs = combineAudio (x =$= CL.map audioData) (y =$= CL.map audioData)
   mergePair (vs1, vs2) = Audio $ vs1 ++ vs2
   in pairs =$= CL.map mergePair
 
-mix :: (Monad m) =>
-  C.Source m (Audio r c) -> C.Source m (Audio r c) -> C.Source m (Audio r c)
+mix :: (Monad m) => C.Source m Audio -> C.Source m Audio -> C.Source m Audio
 mix x y = let
   pairs = combineAudio (x =$= CL.map audioData) (y =$= CL.map audioData)
   mergePair (vs1, vs2) = Audio $ zipWith (V.zipWith (+)) vs1 vs2
@@ -99,14 +80,10 @@ combineAudio s1 s2 = let
                 loop
     in loop
 
-concatenate :: (Monad m) =>
-  C.Source m (Audio r c) -> C.Source m (Audio r c) -> C.Source m (Audio r c)
-concatenate = (>>)
-
-gain :: (Monad m) => Float -> C.Conduit (Audio r c) m (Audio r c)
+gain :: (Monad m) => Float -> C.Conduit Audio m Audio
 gain d = CL.map $ \(Audio vs) -> Audio $ map (V.map (* d)) vs
 
-dropStart :: (Monad m) => Samples -> C.Conduit (Audio r c) m (Audio r c)
+dropStart :: (Monad m) => Samples -> C.Conduit Audio m Audio
 dropStart s = C.await >>= \case
   Nothing         -> return ()
   Just (Audio vs) -> let
@@ -116,16 +93,13 @@ dropStart s = C.await >>= \case
       LT -> C.yield (Audio $ map (V.drop $ fromIntegral s) vs) >> CL.map id
       GT -> dropStart $ s - len
 
-dropEnd :: (Monad m) => Samples -> C.Conduit (Audio r c) m (Audio r c)
-dropEnd = undefined
-
-fadeIn :: (Monad m) => Samples -> C.Conduit (Audio r c) m (Audio r c)
+fadeIn :: (Monad m) => Samples -> C.Conduit Audio m Audio
 fadeIn = undefined
 
-fadeOut :: (Monad m) => Samples -> C.Conduit (Audio r c) m (Audio r c)
+fadeOut :: (Monad m) => Samples -> C.Conduit Audio m Audio
 fadeOut = undefined
 
-takeStart :: (Monad m) => Samples -> C.Conduit (Audio r c) m (Audio r c)
+takeStart :: (Monad m) => Samples -> C.Conduit Audio m Audio
 takeStart s = C.await >>= \case
   Nothing         -> return ()
   Just (Audio vs) -> let
@@ -134,6 +108,3 @@ takeStart s = C.await >>= \case
       EQ -> C.yield $ Audio vs
       LT -> C.yield $ Audio $ map (V.take $ fromIntegral s) vs
       GT -> C.yield (Audio vs) >> takeStart (s - len)
-
-takeEnd :: (Monad m) => Samples -> C.Conduit (Audio r c) m (Audio r c)
-takeEnd = undefined

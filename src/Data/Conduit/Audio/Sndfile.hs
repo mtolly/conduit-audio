@@ -7,64 +7,28 @@ import qualified Data.Conduit.List as CL
 import qualified Sound.File.Sndfile as Snd
 import qualified Sound.File.Sndfile.Buffer.Vector as SndBuf
 import Control.Monad.IO.Class
-import GHC.TypeLits
-import Control.Monad (when, void)
+import Control.Monad (void)
 import qualified Data.Vector.Storable as V
 import Control.Monad.Fix (fix)
 
-sourceSnd :: (MonadIO m, KnownNat r, KnownNat c) =>
-  FilePath -> C.Source m (Audio r c)
-sourceSnd fp = let
-  fakeAudio :: C.Source m (Audio r c) -> Audio r c
-  fakeAudio = undefined -- used as proxy
-  r = rate     $ fakeAudio source
-  c = channels $ fakeAudio source
-  source = do
-    h <- liftIO $ Snd.openFile fp Snd.ReadMode Snd.defaultInfo
-    let info = Snd.hInfo h
-    when (r /= fromIntegral (Snd.samplerate info)) $ error $ unwords
-      [ "Data.Conduit.Audio.Sndfile.sourceSnd: file"
-      , fp
-      , "has sample rate"
-      , show $ Snd.samplerate info
-      , "Hz but tried to read as"
-      , show r
-      , "Hz"
-      ]
-    when (c /= fromIntegral (Snd.channels info)) $ error $ unwords
-      [ "Data.Conduit.Audio.Sndfile.sourceSnd: file"
-      , fp
-      , "has"
-      , show $ Snd.channels info
-      , "channels but tried to read as"
-      , show c
-      , "channels"
-      ]
-    fix $ \loop -> liftIO (Snd.hGetBuffer h chunkSize) >>= \case
-      Nothing -> liftIO $ Snd.hClose h
-      Just buf -> do
-        let a = Audio $ deinterleave (fromIntegral c) $ SndBuf.fromBuffer buf
-        a `C.yieldOr` liftIO (Snd.hClose h)
-        loop
-  chunkSize = 10000
-  in source
+sourceSnd :: (MonadIO m) => FilePath -> C.Source m Audio
+sourceSnd fp = do
+  h <- liftIO $ Snd.openFile fp Snd.ReadMode Snd.defaultInfo
+  let chans = Snd.channels $ Snd.hInfo h
+      chunkSize = 10000
+  fix $ \loop -> liftIO (Snd.hGetBuffer h chunkSize) >>= \case
+    Nothing -> liftIO $ Snd.hClose h
+    Just buf -> do
+      let a = Audio $ deinterleave (fromIntegral chans) $ SndBuf.fromBuffer buf
+      a `C.yieldOr` liftIO (Snd.hClose h)
+      loop
 
-sinkSnd :: (MonadIO m, KnownNat r, KnownNat c) =>
-  FilePath -> Snd.Format -> C.Sink (Audio r c) m ()
-sinkSnd fp fmt = let
-  fakeAudio :: C.Sink (Audio r c) m () -> Audio r c
-  fakeAudio = undefined -- used as proxy
-  sink = do
-    let info = Snd.defaultInfo
-          { Snd.format     = fmt
-          , Snd.samplerate = fromIntegral $ rate     $ fakeAudio sink
-          , Snd.channels   = fromIntegral $ channels $ fakeAudio sink
-          }
-    h <- liftIO $ Snd.openFile fp Snd.WriteMode info
-    CL.mapM_ $ \(Audio vs) ->
-      liftIO $ void $ Snd.hPutBuffer h $ SndBuf.toBuffer $ interleave vs
-    liftIO $ Snd.hClose h
-  in sink
+sinkSnd :: (MonadIO m) => FilePath -> Snd.Info -> C.Sink Audio m ()
+sinkSnd fp info = do
+  h <- liftIO $ Snd.openFile fp Snd.WriteMode info
+  CL.mapM_ $ \(Audio vs) ->
+    liftIO $ void $ Snd.hPutBuffer h $ SndBuf.toBuffer $ interleave vs
+  liftIO $ Snd.hClose h
 
 -- | Given a vector with interleaved samples, like @[L0, R0, L1, R1, ...]@,
 -- converts it into @[[L0, L1, ...], [R0, R1, ...]]@.
