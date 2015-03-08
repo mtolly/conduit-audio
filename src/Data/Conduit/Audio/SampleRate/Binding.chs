@@ -74,7 +74,10 @@ sampleRateError fn i = do
     else peekCString ps
   error $ "Data.Conduit.Audio.SampleRate." ++ fn ++ ": libsamplerate error; " ++ s
 
-new :: ConverterType -> Int -> IO State
+new
+  :: ConverterType
+  -> Int -- ^ channels
+  -> IO State
 new ctype chans = alloca $ \perr -> do
   state@(State pstate) <- newRaw ctype chans perr
   when (pstate == nullPtr) $ peek perr >>= sampleRateError "new"
@@ -99,7 +102,7 @@ data DataIn = DataIn
   , input_frames  :: Integer
   , output_frames :: Integer
   , src_ratio     :: Double
-  , end_of_input  :: Int
+  , end_of_input  :: Bool
   } deriving (Eq, Ord, Show)
 
 data DataOut = DataOut
@@ -115,7 +118,7 @@ process state input = allocaBytes {#sizeof SRC_DATA#} $ \pdata -> do
   {#set SRC_DATA.input_frames  #} sdata $ fromIntegral $ input_frames  input
   {#set SRC_DATA.output_frames #} sdata $ fromIntegral $ output_frames input
   {#set SRC_DATA.src_ratio     #} sdata $ realToFrac   $ src_ratio     input
-  {#set SRC_DATA.end_of_input  #} sdata $ fromIntegral $ end_of_input  input
+  {#set SRC_DATA.end_of_input  #} sdata $ fromBool     $ end_of_input  input
   processRaw state sdata >>= sampleRateError "process"
   DataOut
     <$> fmap fromIntegral ({#get SRC_DATA.input_frames_used #} sdata)
