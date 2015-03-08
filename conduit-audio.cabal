@@ -10,7 +10,7 @@ library
   exposed-modules:
     Data.Conduit.Audio
     Data.Conduit.Audio.Sndfile
-    Data.Conduit.Audio.SampleRate.Binding
+    Data.Conduit.Audio.SampleRate
   build-depends:
     base >= 4.7 && < 4.8
     , conduit
