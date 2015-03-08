@@ -1,9 +1,9 @@
 module Data.Conduit.Audio.SampleRate.Binding
-( newState, delete, process, reset, setRatio
-, SRC_STATE, SRC_DATA_input(..), SRC_DATA_output(..), ConverterType(..)
+( new, delete, process, reset, setRatio
+, State, DataIn(..), DataOut(..), ConverterType(..)
 ) where
 
-import Foreign
+import Foreign hiding (new)
 import Foreign.C
 import Control.Monad (when)
 import Control.Applicative
@@ -19,8 +19,8 @@ int src_reset (SRC_STATE *state) ;
 int src_set_ratio (SRC_STATE *state, double new_ratio) ;
 -}
 
-{#pointer *SRC_STATE newtype #}
-{#pointer *SRC_DATA  newtype #}
+{#pointer *SRC_STATE as State newtype #}
+{#pointer *SRC_DATA  as Data  newtype #}
 
 {#context prefix="src_"#}
 
@@ -28,23 +28,23 @@ int src_set_ratio (SRC_STATE *state, double new_ratio) ;
   { convTypeToC `ConverterType'
   , `Int'
   , id `Ptr CInt'
-  } -> `SRC_STATE' #}
+  } -> `State' #}
 
 {#fun delete as deleteRaw
-  { `SRC_STATE'
-  } -> `SRC_STATE' #}
+  { `State'
+  } -> `State' #}
 
 {#fun process as processRaw
-  { `SRC_STATE'
-  , `SRC_DATA'
+  { `State'
+  , `Data'
   } -> `Int' #}
 
 {#fun reset as resetRaw
-  { `SRC_STATE'
+  { `State'
   } -> `Int' #}
 
 {#fun set_ratio as setRatioRaw
-  { `SRC_STATE'
+  { `State'
   , `Double'
   } -> `Int' #}
 
@@ -74,10 +74,10 @@ sampleRateError fn i = do
     else peekCString ps
   error $ "Data.Conduit.Audio.SampleRate." ++ fn ++ ": libsamplerate error; " ++ s
 
-newState :: ConverterType -> Int -> IO SRC_STATE
-newState ctype chans = alloca $ \perr -> do
-  state@(SRC_STATE pstate) <- newRaw ctype chans perr
-  when (pstate == nullPtr) $ peek perr >>= sampleRateError "newState"
+new :: ConverterType -> Int -> IO State
+new ctype chans = alloca $ \perr -> do
+  state@(State pstate) <- newRaw ctype chans perr
+  when (pstate == nullPtr) $ peek perr >>= sampleRateError "new"
   return state
 
 {-
@@ -93,42 +93,42 @@ typedef struct
 } SRC_DATA ;
 -}
 
-data SRC_DATA_input = SRC_DATA_input
-  { data_in :: Ptr CFloat
-  , data_out :: Ptr CFloat
-  , input_frames :: CLong
-  , output_frames :: CLong
-  , src_ratio :: CDouble
-  , end_of_input :: CInt
+data DataIn = DataIn
+  { data_in       :: Ptr CFloat
+  , data_out      :: Ptr CFloat
+  , input_frames  :: Integer
+  , output_frames :: Integer
+  , src_ratio     :: Double
+  , end_of_input  :: Int
   } deriving (Eq, Ord, Show)
 
-data SRC_DATA_output = SRC_DATA_output
-  { input_frames_used :: CLong
-  , output_frames_gen :: CLong
+data DataOut = DataOut
+  { input_frames_used :: Integer
+  , output_frames_gen :: Integer
   } deriving (Eq, Ord, Show)
 
-process :: SRC_STATE -> SRC_DATA_input -> IO SRC_DATA_output
+process :: State -> DataIn -> IO DataOut
 process state input = allocaBytes {#sizeof SRC_DATA#} $ \pdata -> do
-  let sdata = SRC_DATA pdata
-  {#set SRC_DATA.data_in       #} sdata $ data_in       input
-  {#set SRC_DATA.data_out      #} sdata $ data_out      input
-  {#set SRC_DATA.input_frames  #} sdata $ input_frames  input
-  {#set SRC_DATA.output_frames #} sdata $ output_frames input
-  {#set SRC_DATA.src_ratio     #} sdata $ src_ratio     input
-  {#set SRC_DATA.end_of_input  #} sdata $ end_of_input  input
+  let sdata = Data pdata
+  {#set SRC_DATA.data_in       #} sdata $ data_in                      input
+  {#set SRC_DATA.data_out      #} sdata $ data_out                     input
+  {#set SRC_DATA.input_frames  #} sdata $ fromIntegral $ input_frames  input
+  {#set SRC_DATA.output_frames #} sdata $ fromIntegral $ output_frames input
+  {#set SRC_DATA.src_ratio     #} sdata $ realToFrac   $ src_ratio     input
+  {#set SRC_DATA.end_of_input  #} sdata $ fromIntegral $ end_of_input  input
   processRaw state sdata >>= sampleRateError "process"
-  SRC_DATA_output
-    <$> {#get SRC_DATA.input_frames_used #} sdata
-    <*> {#get SRC_DATA.output_frames_gen #} sdata
+  DataOut
+    <$> fmap fromIntegral ({#get SRC_DATA.input_frames_used #} sdata)
+    <*> fmap fromIntegral ({#get SRC_DATA.output_frames_gen #} sdata)
 
-delete :: SRC_STATE -> IO ()
+delete :: State -> IO ()
 delete state = do
-  SRC_STATE p <- deleteRaw state
+  State p <- deleteRaw state
   when (p /= nullPtr) $
     error "Data.Conduit.Audio.SampleRate.delete: returned non-null pointer"
 
-reset :: SRC_STATE -> IO ()
+reset :: State -> IO ()
 reset state = resetRaw state >>= sampleRateError "reset"
 
-setRatio :: SRC_STATE -> Double -> IO ()
+setRatio :: State -> Double -> IO ()
 setRatio state r = setRatioRaw state r >>= sampleRateError "setRatio"
