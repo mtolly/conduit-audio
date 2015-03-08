@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 module Data.Conduit.Audio.SampleRate.Binding
 ( new, delete, process, reset, setRatio
 , State, DataIn(..), DataOut(..), ConverterType(..)
@@ -7,8 +8,13 @@ import Foreign hiding (new)
 import Foreign.C
 import Control.Monad (when)
 import Control.Applicative
+import Data.Typeable (Typeable)
+import Control.Exception (Exception, throwIO)
 
 #include <samplerate.h>
+
+inThisModule :: String -> String
+inThisModule = ("Data.Conduit.Audio.SampleRate." ++)
 
 {-
 SRC_STATE* src_new (int converter_type, int channels, int *error) ;
@@ -72,7 +78,12 @@ sampleRateError fn i = do
   s <- if ps == nullPtr
     then return "strerror returned NULL"
     else peekCString ps
-  error $ "Data.Conduit.Audio.SampleRate." ++ fn ++ ": libsamplerate error; " ++ s
+  throwIO $ SRCError (inThisModule fn) (fromIntegral i) s
+
+data SRCError = SRCError String Int String
+  deriving (Eq, Ord, Show, Read, Typeable)
+
+instance Exception SRCError
 
 new
   :: ConverterType
@@ -128,7 +139,7 @@ delete :: State -> IO ()
 delete state = do
   State p <- deleteRaw state
   when (p /= nullPtr) $
-    error "Data.Conduit.Audio.SampleRate.delete: returned non-null pointer"
+    error $ inThisModule "delete: returned non-null pointer"
 
 reset :: State -> IO ()
 reset state = resetRaw state >>= sampleRateError "reset"
