@@ -11,6 +11,8 @@ library
     Data.Conduit.Audio
     Data.Conduit.Audio.Sndfile
     Data.Conduit.Audio.SampleRate
+  other-modules:
+    Data.Conduit.Audio.SampleRate.Binding
   build-depends:
     base >= 4.7 && < 4.8
     , conduit
