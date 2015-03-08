@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Data.Conduit.Audio.SampleRate.Binding
 ( new, delete, process, reset, setRatio
-, State, DataIn(..), DataOut(..), ConverterType(..)
+, State, DataIn(..), DataOut(..), ConverterType(..), SRCError(..)
 ) where
 
 import Foreign hiding (new)

@@ -88,10 +88,9 @@ fadeIn (AudioSource s r c l) = let
   go i = C.await >>= \case
     Nothing -> return ()
     Just v  -> let
-      fader = V.generate len $ \j ->
-        min 1 $ fromIntegral (quot j c) / fromIntegral samps
-      len = sampleLength v c
-      in C.yield (V.zipWith (*) v fader) >> go (i + len)
+      fader = V.generate (V.length v) $ \j ->
+        min 1 $ fromIntegral (i + quot j c) / fromIntegral samps
+      in C.yield (V.zipWith (*) v fader) >> go (i + sampleLength v c)
   samps = floor $ l * fromIntegral r :: Samples
   in AudioSource (s =$= go 0) r c l
 
@@ -100,10 +99,9 @@ fadeOut (AudioSource s r c l) = let
   go i = C.await >>= \case
     Nothing -> return ()
     Just v  -> let
-      fader = V.generate len $ \j ->
-        1 - (min 1 $ fromIntegral (quot j c) / fromIntegral samps)
-      len = sampleLength v c
-      in C.yield (V.zipWith (*) v fader) >> go (i + len)
+      fader = V.generate (V.length v) $ \j ->
+        1 - (min 1 $ fromIntegral (i + quot j c) / fromIntegral samps)
+      in C.yield (V.zipWith (*) v fader) >> go (i + sampleLength v c)
   samps = floor $ l * fromIntegral r :: Samples
   in AudioSource (s =$= go 0) r c l
 
