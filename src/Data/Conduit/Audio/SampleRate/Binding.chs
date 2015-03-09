@@ -1,3 +1,9 @@
+{- |
+A binding to the <http://www.mega-nerd.com/SRC/api_full.html full API> of @libsamplerate@.
+Errors are turned into Haskell exceptions of type 'SRCError'.
+The @SRC_DATA@ struct is split into two Haskell types
+for the input ('DataIn') and output ('DataOut') parts.
+-}
 {-# LANGUAGE DeriveDataTypeable #-}
 module Data.Conduit.Audio.SampleRate.Binding
 ( new, delete, process, reset, setRatio
@@ -14,41 +20,37 @@ import Control.Exception (Exception, throwIO)
 #include <samplerate.h>
 
 inThisModule :: String -> String
-inThisModule = ("Data.Conduit.Audio.SampleRate." ++)
-
-{-
-SRC_STATE* src_new (int converter_type, int channels, int *error) ;
-SRC_STATE* src_delete (SRC_STATE *state) ;
-
-int src_process (SRC_STATE *state, SRC_DATA *data) ;
-int src_reset (SRC_STATE *state) ;
-int src_set_ratio (SRC_STATE *state, double new_ratio) ;
--}
+inThisModule = ("Data.Conduit.Audio.SampleRate.Binding." ++)
 
 {#pointer *SRC_STATE as State newtype #}
 {#pointer *SRC_DATA  as Data  newtype #}
 
 {#context prefix="src_"#}
 
+-- SRC_STATE* src_new (int converter_type, int channels, int *error) ;
 {#fun new as newRaw
   { convTypeToC `ConverterType'
   , `Int'
   , id `Ptr CInt'
   } -> `State' #}
 
+-- SRC_STATE* src_delete (SRC_STATE *state) ;
 {#fun delete as deleteRaw
   { `State'
   } -> `State' #}
 
+-- int src_process (SRC_STATE *state, SRC_DATA *data) ;
 {#fun process as processRaw
   { `State'
   , `Data'
   } -> `Int' #}
 
+-- int src_reset (SRC_STATE *state) ;
 {#fun reset as resetRaw
   { `State'
   } -> `Int' #}
 
+-- int src_set_ratio (SRC_STATE *state, double new_ratio) ;
 {#fun set_ratio as setRatioRaw
   { `State'
   , `Double'
@@ -66,7 +68,6 @@ convTypeToC :: ConverterType -> CInt
 convTypeToC = fromIntegral . fromEnum
 
 -- const char* src_strerror (int error) ;
-
 {#fun strerror as ^
   { id `CInt'
   } -> `CString' id #}
@@ -138,8 +139,8 @@ process state input = allocaBytes {#sizeof SRC_DATA#} $ \pdata -> do
 delete :: State -> IO ()
 delete state = do
   State p <- deleteRaw state
-  when (p /= nullPtr) $
-    error $ inThisModule "delete: returned non-null pointer"
+  when (p /= nullPtr) $ throwIO $
+    SRCError (inThisModule "delete") 0 "delete returned non-null pointer"
 
 reset :: State -> IO ()
 reset state = resetRaw state >>= sampleRateError "reset"

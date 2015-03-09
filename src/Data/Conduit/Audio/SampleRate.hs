@@ -10,10 +10,15 @@ import Control.Monad.Fix (fix)
 import Control.Monad (when)
 import Foreign
 
-resample :: (MonadIO m) => Double -> AudioSource m -> AudioSource m
+resample
+  :: (MonadIO m)
+  => Double -- ^ the ratio of new sample rate to old sample rate
+  -> AudioSource m
+  -> AudioSource m
 resample rat src = resampleTo (rat * rate src) src
 
-resampleTo :: (MonadIO m) => Rate -> AudioSource m -> AudioSource m
+resampleTo
+  :: (MonadIO m) => Rate -> AudioSource m -> AudioSource m
 resampleTo r' (AudioSource s r c l) = let
   rat = r' / r
   l' = round $ fromIntegral l * rat
@@ -42,7 +47,7 @@ resampleTo r' (AudioSource s r c l) = let
         outFP <- liftIO $ newForeignPtr finalizerFree outPtr
         let v' = V.unsafeFromForeignPtr0 outFP $
               fromIntegral (SRC.output_frames_gen dout) * c
-        v' `C.yieldOr` liftIO (SRC.delete lsr)
+        when (V.length v' /= 0) $ v' `C.yieldOr` liftIO (SRC.delete lsr)
         let inUsed = fromIntegral $ SRC.input_frames_used dout
         when (inUsed /= inLen) $ C.leftover $ V.drop (inUsed * c) v
         loop

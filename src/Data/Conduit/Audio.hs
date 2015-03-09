@@ -1,3 +1,8 @@
+{- |
+Functions in this module which take a duration argument have two versions.
+The versions ending in @Frames@ accept a duration in 'Frames',
+while the untagged versions accept a duration in 'Seconds'.
+-}
 {-# LANGUAGE LambdaCase #-}
 module Data.Conduit.Audio where
 
@@ -23,10 +28,13 @@ data AudioSource m = AudioSource
   }
 
 type Seconds  = Double
+-- | A frame consists of one sample for each audio channel.
 type Frames   = Int
+-- | The number of samples per second.
 type Rate     = Double
 type Channels = Int
 
+-- | Divides the vector length by the channel count to calculate the number of audio frames.
 vectorFrames :: V.Vector Float -> Channels -> Frames
 vectorFrames v c = case quotRem (V.length v) c of
   (len, 0) -> len
@@ -40,7 +48,7 @@ framesToSeconds fms r = fromIntegral fms / r
 secondsToFrames :: Seconds -> Rate -> Frames
 secondsToFrames secs r = round $ secs * r
 
--- | An arbitrary size, in frames, for audio chunks.
+-- | An arbitrary size, in frames, for smallish audio chunks.
 chunkSize :: Frames
 chunkSize = 10000
 
@@ -98,9 +106,11 @@ merge (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
       (\(p1, p2) -> interleave $ deinterleave c1 p1 ++ deinterleave c2 p2))
     r1 (c1 + c2) (max l1 l2)
 
+-- | Multiplies all the audio samples by the given scaling factor.
 gain :: (Monad m) => Float -> AudioSource m -> AudioSource m
 gain d (AudioSource s r c l) = AudioSource (s =$= CL.map (V.map (* d))) r c l
 
+-- | Fades the audio from start (silent) to end (original volume).
 fadeIn :: (Monad m) => AudioSource m -> AudioSource m
 fadeIn (AudioSource s r c l) = let
   go i = C.await >>= \case
@@ -111,6 +121,7 @@ fadeIn (AudioSource s r c l) = let
       in C.yield (V.zipWith (*) v fader) >> go (i + vectorFrames v c)
   in AudioSource (s =$= go 0) r c l
 
+-- | Fades the audio from start (original volume) to end (silent).
 fadeOut :: (Monad m) => AudioSource m -> AudioSource m
 fadeOut (AudioSource s r c l) = let
   go i = C.await >>= \case
@@ -163,6 +174,8 @@ deinterleave n v = do
   i <- [0 .. n - 1]
   return $ V.generate len $ \j -> v V.! (n * j + i)
 
+-- | Opposite of 'deinterleave'.
+-- All the input vectors should have the same length.
 interleave :: (V.Storable a) => [V.Vector a] -> V.Vector a
 interleave vs = let
   n = length vs
@@ -170,6 +183,8 @@ interleave vs = let
     (q, r) = quotRem i n
     in (vs !! r) V.! q
 
+-- | Combines two audio streams to produce pairs of same-size chunks.
+-- If one stream is smaller, its end will be padded with silence to match the larger one.
 combineAudio
   :: (Num a, V.Storable a, Monad m)
   => C.Source m (V.Vector a)

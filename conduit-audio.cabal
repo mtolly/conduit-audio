@@ -5,13 +5,26 @@ maintainer:           miketolly@gmail.com
 category:             Sound
 build-type:           Simple
 cabal-version:        >= 1.10
+synopsis:             Combinators to efficiently slice and dice audio streams
+description:
+  @conduit-audio@ applies @conduit@'s streaming data abilities
+  to efficiently manipulate audio files and streams.
+  Simple combinator functions let you mix files together,
+  cut and paste sections of audio,
+  and apply more complicated transformations like resampling or timestretching,
+  all with the following properties:
+  .
+  * Tiny memory usage, proportional only to the number of simultaneous sources\/effects
+  .
+  * Uses no temporary files; everything is done in one pass
+  .
+  * Blazing fast! (for most uses)
 
 library
   exposed-modules:
     Data.Conduit.Audio
     Data.Conduit.Audio.Sndfile
     Data.Conduit.Audio.SampleRate
-  other-modules:
     Data.Conduit.Audio.SampleRate.Binding
   build-depends:
     base >= 4.7 && < 4.8

@@ -1,5 +1,8 @@
 {-# LANGUAGE LambdaCase #-}
-module Data.Conduit.Audio.Sndfile where
+module Data.Conduit.Audio.Sndfile
+( sourceSnd, sourceSndFrames
+, sinkSnd
+) where
 
 import Data.Conduit.Audio
 import qualified Data.Conduit as C
@@ -25,8 +28,14 @@ sourceSndFrames fp fms = do
             loop
   return $ AudioSource src r c $ Snd.frames info
 
-sourceSnd :: (MonadIO m, MonadIO n) => FilePath -> Seconds -> m (AudioSource n)
+sourceSnd :: (MonadIO m, MonadIO n)
+  => FilePath
+  -> Seconds
+  -- ^ initial position to seek to in the file
+  -- (more efficient than using 'dropStart')
+  -> m (AudioSource n)
 sourceSnd fp secs = do
+  -- TODO: allow user to supply Snd.Format for raw files?
   info <- liftIO $ Snd.getFileInfo fp
   sourceSndFrames fp $ secondsToFrames secs $ fromIntegral $ Snd.samplerate info
 
