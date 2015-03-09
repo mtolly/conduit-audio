@@ -12,9 +12,14 @@ import Text.Printf (printf)
 
 data AudioSource m = AudioSource
   { source   :: C.Source m (V.Vector Float)
+  -- ^ The stream of audio chunks; floating-point samples,
+  -- interleaved by channel. Each chunk can be any positive whole number
+  -- of frames.
   , rate     :: Rate
   , channels :: Channels
   , frames   :: Frames
+  -- ^ The stated length in frames of this audio stream.
+  -- Not guaranteed to be exactly frame-accurate, but should be close.
   }
 
 type Seconds  = Double
@@ -59,14 +64,6 @@ concatenate (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | c1 /= c2 = error $
     printf "Data.Conduit.Audio.concatenate: mismatched channel counts (%d and %d)" c1 c2
   | otherwise = AudioSource (s1 >> s2) r1 c1 (l1 + l2)
-
--- | Pads the end with silence, and then takes exactly the initial N frames.
-setLengthFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
-setLengthFrames fms (AudioSource s r c _) = takeStartFrames fms $
-  AudioSource (s >> forever (C.yield $ V.replicate (chunkSize * c) 0)) r c fms
-
-setLength :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
-setLength secs src@(AudioSource _ r _ _) = setLengthFrames (secondsToFrames secs r) src
 
 padStartFrames, padEndFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
 padStartFrames fms src@(AudioSource _ r c _) = concatenate (silentFrames fms r c) src

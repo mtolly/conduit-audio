@@ -47,4 +47,4 @@ resampleTo r' (AudioSource s r c l) = let
         when (inUsed /= inLen) $ C.leftover $ V.drop (inUsed * c) v
         loop
     liftIO $ SRC.delete lsr
-  in setLengthFrames l' $ AudioSource s' r' c l'
+  in AudioSource s' r' c l'
