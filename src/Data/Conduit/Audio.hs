@@ -6,40 +6,51 @@ import qualified Data.Conduit as C
 import Data.Conduit ((=$=))
 import qualified Data.Conduit.List as CL
 import Data.Conduit.Internal (zipSources)
-import Control.Monad (replicateM_, forever)
+import Control.Monad (replicateM_, forever, when)
 import Data.Maybe (fromMaybe)
 import Text.Printf (printf)
 
 data AudioSource m = AudioSource
   { source   :: C.Source m (V.Vector Float)
-  , rate     :: Samples
+  , rate     :: Rate
   , channels :: Channels
-  , seconds  :: Seconds
+  , frames   :: Frames
   }
 
 type Seconds  = Double
-type Samples  = Int
+type Frames   = Int
+type Rate     = Double
 type Channels = Int
 
-sampleLength :: V.Vector Float -> Channels -> Samples
-sampleLength v c = case quotRem (V.length v) c of
+vectorFrames :: V.Vector Float -> Channels -> Frames
+vectorFrames v c = case quotRem (V.length v) c of
   (len, 0) -> len
   _        -> error $
-    printf "Data.Conduit.Audio.sampleLength: block length (%d) not divisible by channel count (%d)"
+    printf "Data.Conduit.Audio.vectorFrames: block length (%d) not divisible by channel count (%d)"
     (V.length v) c
 
-silence :: Seconds -> Samples -> Channels -> V.Vector Float
-silence len r c = V.replicate (floor $ len * fromIntegral r * fromIntegral c) 0
+framesToSeconds :: Frames -> Rate -> Seconds
+framesToSeconds fms r = fromIntegral fms / r
 
-silent :: (Monad m) => Seconds -> Samples -> Channels -> AudioSource m
-silent len r c = let
-  (secs, part) = properFraction len
-  fullChunk = silence 1    r c
-  partChunk = silence part r c
+secondsToFrames :: Seconds -> Rate -> Frames
+secondsToFrames secs r = round $ secs * r
+
+-- | An arbitrary size, in frames, for audio chunks.
+chunkSize :: Frames
+chunkSize = 10000
+
+silentFrames :: (Monad m) => Frames -> Rate -> Channels -> AudioSource m
+silentFrames fms r c = let
+  (full, part) = quotRem chunkSize fms
+  fullChunk = V.replicate (chunkSize * c) 0
+  partChunk = V.replicate (part      * c) 0
   src = do
-    replicateM_ secs $ C.yield fullChunk
-    C.yield partChunk
-  in AudioSource src r c len
+    replicateM_ full $ C.yield fullChunk
+    when (part /= 0) $ C.yield partChunk
+  in AudioSource src r c fms
+
+silent :: (Monad m) => Seconds -> Rate -> Channels -> AudioSource m
+silent secs r = silentFrames (secondsToFrames secs r) r
 
 concatenate :: (Monad m) => AudioSource m -> AudioSource m -> AudioSource m
 concatenate (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
@@ -49,11 +60,21 @@ concatenate (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
     printf "Data.Conduit.Audio.concatenate: mismatched channel counts (%d and %d)" c1 c2
   | otherwise = AudioSource (s1 >> s2) r1 c1 (l1 + l2)
 
-padStart :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
-padStart secs src@(AudioSource _ r c _) = concatenate (silent secs r c) src
+-- | Pads the end with silence, and then takes exactly the initial N frames.
+setLengthFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+setLengthFrames fms (AudioSource s r c _) = takeStartFrames fms $
+  AudioSource (s >> forever (C.yield $ V.replicate (chunkSize * c) 0)) r c fms
 
-padEnd :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
-padEnd secs src@(AudioSource _ r c _) = concatenate src (silent secs r c)
+setLength :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
+setLength secs src@(AudioSource _ r _ _) = setLengthFrames (secondsToFrames secs r) src
+
+padStartFrames, padEndFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+padStartFrames fms src@(AudioSource _ r c _) = concatenate (silentFrames fms r c) src
+padEndFrames   fms src@(AudioSource _ r c _) = concatenate src (silentFrames fms r c)
+
+padStart, padEnd :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
+padStart secs src@(AudioSource _ r c _) = concatenate (silent secs r c) src
+padEnd   secs src@(AudioSource _ r c _) = concatenate src (silent secs r c)
 
 splitChannels :: (Monad m) => AudioSource m -> [AudioSource m]
 splitChannels (AudioSource src r c l) = do
@@ -89,9 +110,8 @@ fadeIn (AudioSource s r c l) = let
     Nothing -> return ()
     Just v  -> let
       fader = V.generate (V.length v) $ \j ->
-        min 1 $ fromIntegral (i + quot j c) / fromIntegral samps
-      in C.yield (V.zipWith (*) v fader) >> go (i + sampleLength v c)
-  samps = floor $ l * fromIntegral r :: Samples
+        min 1 $ fromIntegral (i + quot j c) / fromIntegral l
+      in C.yield (V.zipWith (*) v fader) >> go (i + vectorFrames v c)
   in AudioSource (s =$= go 0) r c l
 
 fadeOut :: (Monad m) => AudioSource m -> AudioSource m
@@ -100,49 +120,47 @@ fadeOut (AudioSource s r c l) = let
     Nothing -> return ()
     Just v  -> let
       fader = V.generate (V.length v) $ \j ->
-        1 - (min 1 $ fromIntegral (i + quot j c) / fromIntegral samps)
-      in C.yield (V.zipWith (*) v fader) >> go (i + sampleLength v c)
-  samps = floor $ l * fromIntegral r :: Samples
+        1 - (min 1 $ fromIntegral (i + quot j c) / fromIntegral l)
+      in C.yield (V.zipWith (*) v fader) >> go (i + vectorFrames v c)
   in AudioSource (s =$= go 0) r c l
 
-takeStart :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
-takeStart secs (AudioSource src r c _) = let
-  go samps = C.await >>= \case
+takeStartFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+takeStartFrames fms (AudioSource src r c l) = let
+  go left = C.await >>= \case
     Nothing -> return ()
     Just v  -> let
       len = V.length v
-      in case compare samps len of
+      in case compare left len of
         EQ -> C.yield v
-        LT -> C.yield $ V.take samps v
-        GT -> C.yield v >> go (samps - len)
-  takeSamples = floor $ secs * fromIntegral r * fromIntegral c
-  in AudioSource (src =$= go takeSamples) r c secs
+        LT -> C.yield $ V.take left v
+        GT -> C.yield v >> go (left - len)
+  in AudioSource (src =$= go (fms * c)) r c (min l fms)
 
-takeEnd :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
-takeEnd s src = dropStart (seconds src - s) src
-
-dropStart :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
-dropStart secs (AudioSource src r c _) = let
-  go samps = C.await >>= \case
+dropStartFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+dropStartFrames fms (AudioSource src r c l) = let
+  go left = C.await >>= \case
     Nothing -> return ()
     Just v  -> let
       len = V.length v
-      in case compare samps len of
+      in case compare left len of
         EQ -> CL.map id
-        LT -> C.yield (V.drop samps v) >> CL.map id
-        GT -> go (samps - len)
-  dropSamples = floor $ secs * fromIntegral r * fromIntegral c
-  in AudioSource (src =$= go dropSamples) r c secs
+        LT -> C.yield (V.drop left v) >> CL.map id
+        GT -> go (left - len)
+  in AudioSource (src =$= go (fms * c)) r c (max 0 $ l - fms)
 
-dropEnd :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
-dropEnd s src = takeStart (seconds src - s) src
+takeEndFrames, dropEndFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+takeEndFrames fms src = dropStartFrames (frames src - fms) src
+dropEndFrames fms src = takeStartFrames (frames src - fms) src
+
+takeStart, takeEnd, dropStart, dropEnd :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
+takeStart secs src = takeStartFrames (secondsToFrames secs $ rate src) src
+takeEnd   secs src = takeEndFrames   (secondsToFrames secs $ rate src) src
+dropStart secs src = dropStartFrames (secondsToFrames secs $ rate src) src
+dropEnd   secs src = dropEndFrames   (secondsToFrames secs $ rate src) src
 
 -- | Given a vector with interleaved samples, like @[L0, R0, L1, R1, ...]@,
 -- converts it into @[[L0, L1, ...], [R0, R1, ...]]@.
-deinterleave :: (V.Storable a)
-  => Int -- ^ The number of channels to split into.
-  -> V.Vector a
-  -> [V.Vector a]
+deinterleave :: (V.Storable a) => Channels -> V.Vector a -> [V.Vector a]
 deinterleave n v = do
   let len = V.length v `div` n
   i <- [0 .. n - 1]

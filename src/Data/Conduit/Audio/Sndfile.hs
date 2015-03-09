@@ -10,28 +10,26 @@ import Control.Monad.IO.Class
 import Control.Monad (void)
 import Control.Monad.Fix (fix)
 
-sourceSnd :: (MonadIO m, MonadIO n) => FilePath -> Seconds -> m (AudioSource n)
-sourceSnd fp posn = do
+sourceSndFrames :: (MonadIO m, MonadIO n) => FilePath -> Frames -> m (AudioSource n)
+sourceSndFrames fp posn = do
   info <- liftIO $ Snd.getFileInfo fp
-  let r = Snd.samplerate info
+  let r = fromIntegral $ Snd.samplerate info
       c = Snd.channels   info
-      len = fromIntegral (Snd.frames info) / fromIntegral r
-      chunkSize = 10000
       src = do
         h <- liftIO $ Snd.openFile fp Snd.ReadMode Snd.defaultInfo
-        liftIO $ void $ Snd.hSeek h Snd.AbsoluteSeek $ round $ posn * fromIntegral r
+        liftIO $ void $ Snd.hSeek h Snd.AbsoluteSeek posn
         fix $ \loop -> liftIO (Snd.hGetBuffer h chunkSize) >>= \case
           Nothing  -> liftIO $ Snd.hClose h
           Just buf -> do
             SndBuf.fromBuffer buf `C.yieldOr` liftIO (Snd.hClose h)
             loop
-  return $ AudioSource src r c $ max 0 $ len - posn
+  return $ AudioSource src r c $ Snd.frames info
 
 sinkSnd :: (MonadIO m) => FilePath -> Snd.Format -> AudioSource m -> m ()
 sinkSnd fp fmt (AudioSource s r c _) = do
   h <- liftIO $ Snd.openFile fp Snd.WriteMode $ Snd.defaultInfo
     { Snd.format     = fmt
-    , Snd.samplerate = r
+    , Snd.samplerate = round r
     , Snd.channels   = c
     }
   s C.$$ CL.mapM_ (liftIO . void . Snd.hPutBuffer h . SndBuf.toBuffer)

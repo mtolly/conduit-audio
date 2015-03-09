@@ -11,12 +11,12 @@ import Control.Monad (when)
 import Foreign
 
 resample :: (MonadIO m) => Double -> AudioSource m -> AudioSource m
-resample rat src = resampleTo (round $ rat * fromIntegral (rate src)) src
-  -- TODO: better support ratios; probably AudioSource should store Double rate
+resample rat src = resampleTo (rat * rate src) src
 
-resampleTo :: (MonadIO m) => Int -> AudioSource m -> AudioSource m
+resampleTo :: (MonadIO m) => Rate -> AudioSource m -> AudioSource m
 resampleTo r' (AudioSource s r c l) = let
-  rat = fromIntegral r' / fromIntegral r :: Double
+  rat = r' / r
+  l' = round $ fromIntegral l * rat
   s' = s C.=$= do
     lsr <- liftIO $ SRC.new SRC.SincBestQuality c
     fix $ \loop -> C.await >>= \case
@@ -27,7 +27,7 @@ resampleTo r' (AudioSource s r c l) = let
           Just v' -> do
             C.leftover v'
             return False
-        let inLen  = sampleLength v c
+        let inLen  = vectorFrames v c
             outLen = round $ fromIntegral inLen * rat * 1.1
         outPtr <- liftIO $ mallocArray $ outLen * c
         dout <- liftIO $ V.unsafeWith v $ \inPtr -> do
@@ -47,4 +47,4 @@ resampleTo r' (AudioSource s r c l) = let
         when (inUsed /= inLen) $ C.leftover $ V.drop (inUsed * c) v
         loop
     liftIO $ SRC.delete lsr
-  in AudioSource s' r' c l
+  in setLengthFrames l' $ AudioSource s' r' c l'
