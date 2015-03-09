@@ -3,28 +3,30 @@ module Data.Conduit.Audio.SampleRate where
 
 import Data.Conduit.Audio
 import qualified Data.Conduit.Audio.SampleRate.Binding as SRC
-import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.IO.Class (liftIO)
 import qualified Data.Vector.Storable as V
 import qualified Data.Conduit as C
 import Control.Monad.Fix (fix)
 import Control.Monad (when)
 import Foreign
+import Control.Monad.Trans.Resource (MonadResource)
 
 resample
-  :: (MonadIO m)
+  :: (MonadResource m)
   => Double -- ^ the ratio of new sample rate to old sample rate
   -> AudioSource m
   -> AudioSource m
 resample rat src = resampleTo (rat * rate src) src
 
 resampleTo
-  :: (MonadIO m) => Rate -> AudioSource m -> AudioSource m
+  :: (MonadResource m) => Rate -> AudioSource m -> AudioSource m
 resampleTo r' (AudioSource s r c l) = let
   rat = r' / r
   l' = round $ fromIntegral l * rat
-  s' = s C.=$= do
-    lsr <- liftIO $ SRC.new SRC.SincBestQuality c
-    fix $ \loop -> C.await >>= \case
+  s' = s C.=$= C.bracketP
+    (SRC.new SRC.SincBestQuality c)
+    SRC.delete
+    (\lsr -> fix $ \loop -> C.await >>= \case
       Nothing -> return ()
       Just v  -> do
         isEnd <- C.await >>= \case
@@ -47,9 +49,9 @@ resampleTo r' (AudioSource s r c l) = let
         outFP <- liftIO $ newForeignPtr finalizerFree outPtr
         let v' = V.unsafeFromForeignPtr0 outFP $
               fromIntegral (SRC.output_frames_gen dout) * c
-        when (V.length v' /= 0) $ v' `C.yieldOr` liftIO (SRC.delete lsr)
+        when (V.length v' /= 0) $ C.yield v'
         let inUsed = fromIntegral $ SRC.input_frames_used dout
         when (inUsed /= inLen) $ C.leftover $ V.drop (inUsed * c) v
         loop
-    liftIO $ SRC.delete lsr
+    )
   in AudioSource s' r' c l'
