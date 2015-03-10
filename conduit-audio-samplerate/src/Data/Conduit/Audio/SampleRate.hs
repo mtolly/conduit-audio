@@ -51,7 +51,19 @@ resampleTo r' (AudioSource s r c l) = let
               fromIntegral (SRC.output_frames_gen dout) * c
         when (V.length v' /= 0) $ C.yield v'
         let inUsed = fromIntegral $ SRC.input_frames_used dout
-        when (inUsed /= inLen) $ C.leftover $ V.drop (inUsed * c) v
+        when (inUsed /= inLen) $
+          -- we want to make sure we don't keep giving SRC too small a chunk forever
+          if SRC.output_frames_gen dout /= 0
+            then C.leftover $ V.drop (inUsed * c) v
+            -- ^ SRC did produce some output this time, so we're fine
+            else C.await >>= \case
+              Nothing -> return ()
+              -- ^ this should never happen, right?
+              -- that would mean v was the last chunk, we told SRC it was the
+              -- last chunk, but then it didn't use it all
+              Just v' -> C.leftover $ V.drop (inUsed * c) v V.++ v'
+              -- ^ if v was too small to produce anything,
+              -- glue it onto v' to make a bigger chunk
         loop
     )
   in AudioSource s' r' c l'
