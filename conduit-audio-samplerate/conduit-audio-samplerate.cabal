@@ -1,0 +1,24 @@
+name:                 conduit-audio-samplerate
+version:              0.1
+author:               Michael Tolly
+maintainer:           miketolly@gmail.com
+category:             Sound
+build-type:           Simple
+cabal-version:        >= 1.10
+
+library
+  exposed-modules:
+    Data.Conduit.Audio.SampleRate
+    Data.Conduit.Audio.SampleRate.Binding
+  build-depends:
+    base >= 4.7 && < 4.8
+    , conduit
+    , resourcet
+    , vector
+    , transformers >= 0.4
+    , conduit-audio
+  hs-source-dirs:       src
+  default-language:     Haskell2010
+  ghc-options:          -Wall
+  extra-libraries:
+    samplerate
