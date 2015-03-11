@@ -14,7 +14,7 @@ import Control.Monad (void)
 import Control.Monad.Fix (fix)
 import Control.Monad.Trans.Resource (MonadResource)
 
-sourceSndFrames :: (MonadResource m) => FilePath -> Frames -> IO (AudioSource m)
+sourceSndFrames :: (MonadResource m, Snd.Sample a) => FilePath -> Frames -> IO (AudioSource m a)
 sourceSndFrames fp fms = do
   info <- Snd.getFileInfo fp
   let r = fromIntegral $ Snd.samplerate info
@@ -31,18 +31,18 @@ sourceSndFrames fp fms = do
               loop
   return $ AudioSource src r c $ Snd.frames info
 
-sourceSnd :: (MonadResource m)
+sourceSnd :: (MonadResource m, Snd.Sample a)
   => FilePath
   -> Seconds
   -- ^ initial position to seek to in the file
   -- (more efficient than using 'dropStart')
-  -> IO (AudioSource m)
+  -> IO (AudioSource m a)
 sourceSnd fp secs = do
   -- TODO: allow user to supply Snd.Format for raw files?
   info <- Snd.getFileInfo fp
   sourceSndFrames fp $ secondsToFrames secs $ fromIntegral $ Snd.samplerate info
 
-sinkSnd :: (MonadResource m) => FilePath -> Snd.Format -> AudioSource m -> m ()
+sinkSnd :: (MonadResource m, Snd.Sample a) => FilePath -> Snd.Format -> AudioSource m a -> m ()
 sinkSnd fp fmt (AudioSource s r c _) = s C.$$ C.bracketP
   (Snd.openFile fp Snd.WriteMode $ Snd.defaultInfo
     { Snd.format     = fmt

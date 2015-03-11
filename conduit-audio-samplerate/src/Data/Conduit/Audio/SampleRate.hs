@@ -14,12 +14,12 @@ import Control.Monad.Trans.Resource (MonadResource)
 resample
   :: (MonadResource m)
   => Double -- ^ the ratio of new sample rate to old sample rate
-  -> AudioSource m
-  -> AudioSource m
+  -> AudioSource m Float
+  -> AudioSource m Float
 resample rat src = resampleTo (rat * rate src) src
 
 resampleTo
-  :: (MonadResource m) => Rate -> AudioSource m -> AudioSource m
+  :: (MonadResource m) => Rate -> AudioSource m Float -> AudioSource m Float
 resampleTo r' (AudioSource s r c l) = let
   rat = r' / r
   l' = round $ fromIntegral l * rat
@@ -61,7 +61,7 @@ resampleTo r' (AudioSource s r c l) = let
               -- ^ this should never happen, right?
               -- that would mean v was the last chunk, we told SRC it was the
               -- last chunk, but then it didn't use it all
-              Just v' -> C.leftover $ V.drop (inUsed * c) v V.++ v'
+              Just v'' -> C.leftover $ V.drop (inUsed * c) v V.++ v''
               -- ^ if v was too small to produce anything,
               -- glue it onto v' to make a bigger chunk
         loop

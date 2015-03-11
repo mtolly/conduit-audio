@@ -15,11 +15,10 @@ import Control.Monad (replicateM_, forever, when)
 import Data.Maybe (fromMaybe)
 import Text.Printf (printf)
 
-data AudioSource m = AudioSource
-  { source   :: C.Source m (V.Vector Float)
-  -- ^ The stream of audio chunks; floating-point samples,
-  -- interleaved by channel. Each chunk can be any positive whole number
-  -- of frames.
+data AudioSource m a = AudioSource
+  { source   :: C.Source m (V.Vector a)
+  -- ^ The stream of audio chunks; samples interleaved by channel.
+  -- Each chunk can be any positive whole number of frames.
   , rate     :: Rate
   , channels :: Channels
   , frames   :: Frames
@@ -35,7 +34,7 @@ type Rate     = Double
 type Channels = Int
 
 -- | Divides the vector length by the channel count to calculate the number of audio frames.
-vectorFrames :: V.Vector Float -> Channels -> Frames
+vectorFrames :: (V.Storable a) => V.Vector a -> Channels -> Frames
 vectorFrames v c = case quotRem (V.length v) c of
   (len, 0) -> len
   _        -> error $
@@ -52,9 +51,9 @@ secondsToFrames secs r = round $ secs * r
 chunkSize :: Frames
 chunkSize = 10000
 
-silentFrames :: (Monad m) => Frames -> Rate -> Channels -> AudioSource m
+silentFrames :: (Monad m, Num a, V.Storable a) => Frames -> Rate -> Channels -> AudioSource m a
 silentFrames fms r c = let
-  (full, part) = quotRem chunkSize fms
+  (full, part) = quotRem fms chunkSize
   fullChunk = V.replicate (chunkSize * c) 0
   partChunk = V.replicate (part      * c) 0
   src = do
@@ -62,10 +61,10 @@ silentFrames fms r c = let
     when (part /= 0) $ C.yield partChunk
   in AudioSource src r c fms
 
-silent :: (Monad m) => Seconds -> Rate -> Channels -> AudioSource m
+silent :: (Monad m, Num a, V.Storable a) => Seconds -> Rate -> Channels -> AudioSource m a
 silent secs r = silentFrames (secondsToFrames secs r) r
 
-concatenate :: (Monad m) => AudioSource m -> AudioSource m -> AudioSource m
+concatenate :: (Monad m) => AudioSource m a -> AudioSource m a -> AudioSource m a
 concatenate (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | r1 /= r2 = error $
     printf "Data.Conduit.Audio.concatenate: mismatched rates (%d and %d)" r1 r2
@@ -73,21 +72,21 @@ concatenate (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
     printf "Data.Conduit.Audio.concatenate: mismatched channel counts (%d and %d)" c1 c2
   | otherwise = AudioSource (s1 >> s2) r1 c1 (l1 + l2)
 
-padStartFrames, padEndFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+padStartFrames, padEndFrames :: (Monad m, Num a, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
 padStartFrames fms src@(AudioSource _ r c _) = concatenate (silentFrames fms r c) src
 padEndFrames   fms src@(AudioSource _ r c _) = concatenate src (silentFrames fms r c)
 
-padStart, padEnd :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
+padStart, padEnd :: (Monad m, Num a, V.Storable a) => Seconds -> AudioSource m a -> AudioSource m a
 padStart secs src@(AudioSource _ r c _) = concatenate (silent secs r c) src
 padEnd   secs src@(AudioSource _ r c _) = concatenate src (silent secs r c)
 
-splitChannels :: (Monad m) => AudioSource m -> [AudioSource m]
+splitChannels :: (Monad m, V.Storable a) => AudioSource m a -> [AudioSource m a]
 splitChannels (AudioSource src r c l) = do
   i <- [0 .. c - 1]
   let src' = src =$= CL.map (\v -> deinterleave c v !! i)
   return $ AudioSource src' r 1 l
 
-mix :: (Monad m) => AudioSource m -> AudioSource m -> AudioSource m
+mix :: (Monad m, Num a, V.Storable a) => AudioSource m a -> AudioSource m a -> AudioSource m a
 mix (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | r1 /= r2 = error $
     printf "Data.Conduit.Audio.mix: mismatched rates (%d and %d)" r1 r2
@@ -97,7 +96,7 @@ mix (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
     (combineAudio s1 s2 =$= CL.map (uncurry $ V.zipWith (+)))
     r1 c1 (max l1 l2)
 
-merge :: (Monad m) => AudioSource m -> AudioSource m -> AudioSource m
+merge :: (Monad m, Num a, V.Storable a) => AudioSource m a -> AudioSource m a -> AudioSource m a
 merge (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | r1 /= r2 = error $
     printf "Data.Conduit.Audio.merge: mismatched rates (%d and %d)" r1 r2
@@ -106,12 +105,16 @@ merge (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
       (\(p1, p2) -> interleave $ deinterleave c1 p1 ++ deinterleave c2 p2))
     r1 (c1 + c2) (max l1 l2)
 
+mapSamples :: (Monad m, V.Storable a, V.Storable b) =>
+  (a -> b) -> AudioSource m a -> AudioSource m b
+mapSamples f (AudioSource s r c l) = AudioSource (s =$= CL.map (V.map f)) r c l
+
 -- | Multiplies all the audio samples by the given scaling factor.
-gain :: (Monad m) => Float -> AudioSource m -> AudioSource m
-gain d (AudioSource s r c l) = AudioSource (s =$= CL.map (V.map (* d))) r c l
+gain :: (Monad m, Num a, V.Storable a) => a -> AudioSource m a -> AudioSource m a
+gain d = mapSamples (* d)
 
 -- | Fades the audio from start (silent) to end (original volume).
-fadeIn :: (Monad m) => AudioSource m -> AudioSource m
+fadeIn :: (Monad m, Ord a, Fractional a, V.Storable a) => AudioSource m a -> AudioSource m a
 fadeIn (AudioSource s r c l) = let
   go i = C.await >>= \case
     Nothing -> return ()
@@ -122,7 +125,7 @@ fadeIn (AudioSource s r c l) = let
   in AudioSource (s =$= go 0) r c l
 
 -- | Fades the audio from start (original volume) to end (silent).
-fadeOut :: (Monad m) => AudioSource m -> AudioSource m
+fadeOut :: (Monad m, Ord a, Fractional a, V.Storable a) => AudioSource m a -> AudioSource m a
 fadeOut (AudioSource s r c l) = let
   go i = C.await >>= \case
     Nothing -> return ()
@@ -132,7 +135,7 @@ fadeOut (AudioSource s r c l) = let
       in C.yield (V.zipWith (*) v fader) >> go (i + vectorFrames v c)
   in AudioSource (s =$= go 0) r c l
 
-takeStartFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+takeStartFrames :: (Monad m, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
 takeStartFrames fms (AudioSource src r c l) = let
   go left = C.await >>= \case
     Nothing -> return ()
@@ -144,7 +147,7 @@ takeStartFrames fms (AudioSource src r c l) = let
         GT -> C.yield v >> go (left - len)
   in AudioSource (src =$= go (fms * c)) r c (min l fms)
 
-dropStartFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+dropStartFrames :: (Monad m, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
 dropStartFrames fms (AudioSource src r c l) = let
   go left = C.await >>= \case
     Nothing -> return ()
@@ -156,11 +159,11 @@ dropStartFrames fms (AudioSource src r c l) = let
         GT -> go (left - len)
   in AudioSource (src =$= go (fms * c)) r c (max 0 $ l - fms)
 
-takeEndFrames, dropEndFrames :: (Monad m) => Frames -> AudioSource m -> AudioSource m
+takeEndFrames, dropEndFrames :: (Monad m, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
 takeEndFrames fms src = dropStartFrames (frames src - fms) src
 dropEndFrames fms src = takeStartFrames (frames src - fms) src
 
-takeStart, takeEnd, dropStart, dropEnd :: (Monad m) => Seconds -> AudioSource m -> AudioSource m
+takeStart, takeEnd, dropStart, dropEnd :: (Monad m, V.Storable a) => Seconds -> AudioSource m a -> AudioSource m a
 takeStart secs src = takeStartFrames (secondsToFrames secs $ rate src) src
 takeEnd   secs src = takeEndFrames   (secondsToFrames secs $ rate src) src
 dropStart secs src = dropStartFrames (secondsToFrames secs $ rate src) src
