@@ -1,0 +1,262 @@
+module Data.Conduit.Audio.LAME.Binding where
+
+import Foreign
+import Foreign.C
+
+#include <lame/lame.h>
+
+{#pointer *lame_global_flags as LAME newtype #}
+
+{#context prefix="lame_"#}
+
+{#fun init as ^ {} -> `LAME' #}
+
+<%
+def get(cname, hstype, toHs: '')
+  "{\#fun get_#{cname} as ^ { `LAME' } -> `#{hstype}' #{toHs} \#}"
+end
+def set(cname, hstype, fromHs: '')
+ "{\#fun set_#{cname} as ^ { `LAME', #{fromHs} `#{hstype}' } -> `Int' \#}"
+end
+def param(cname, hstype, fromHs: '', toHs: '')
+  get(cname, hstype, toHs: toHs) + "\n" +  set(cname, hstype, fromHs: fromHs)
+end
+%>
+
+<%= param 'num_samples', 'Int' %>
+<%= param 'in_samplerate', 'Int' %>
+<%= param 'num_channels', 'Int' %>
+<%= param 'scale', 'Float' %>
+<%= param 'scale_left', 'Float' %>
+<%= param 'scale_right', 'Float' %>
+<%= param 'out_samplerate', 'Int' %>
+<%= param 'analysis', 'Bool' %>
+<%= param 'bWriteVbrTag', 'Bool' %>
+<%= param 'decode_only', 'Bool' %>
+<%= param 'quality', 'Int' %>
+<%= param 'mode', 'MPEGMode', fromHs: 'fromCEnum', toHs: 'toCEnum' %>
+
+{#enum MPEG_mode as MPEGMode {underscoreToCase}
+  deriving (Eq, Ord, Show, Read, Bounded) #}
+
+fromCEnum :: (Enum a) => a -> CInt
+fromCEnum = fromIntegral . fromEnum
+
+toCEnum :: (Enum a) => CInt -> a
+toCEnum = toEnum . fromIntegral
+
+<%= param 'force_ms', 'Bool' %>
+<%= param 'free_format', 'Bool' %>
+<%= param 'findReplayGain', 'Bool' %>
+<%= param 'decode_on_the_fly', 'Bool' %>
+<%= param 'nogap_total', 'Int' %>
+<%= param 'nogap_currentindex', 'Int' %>
+
+-- TODO: lame_set_errorf, lame_set_debugf, lame_set_msgf
+
+<%= param 'brate', 'Int' %>
+<%= param 'compression_ratio', 'Float' %>
+
+{#fun set_preset as ^ { `LAME', `Int' } -> `Int' #}
+{#fun set_asm_optimizations as ^ { `LAME', `Int', `Int' } -> `Int' #}
+
+<%= param 'copyright', 'Bool' %>
+<%= param 'original', 'Bool' %>
+<%= param 'error_protection', 'Bool' %>
+<%= param 'extension', 'Bool' %>
+<%= param 'strict_ISO', 'Bool' %>
+
+-- TODO: quantization/noise shaping section
+
+<%= param 'VBR', 'VBRMode', fromHs: 'fromCEnum', toHs: 'toCEnum' %>
+
+{#enum vbr_mode as VBRMode {underscoreToCase}
+  deriving (Eq, Ord, Show, Read, Bounded) #}
+
+<%= param 'VBR_q', 'Int' %>
+<%= param 'VBR_quality', 'Float' %>
+
+<%= param 'VBR_mean_bitrate_kbps', 'Int' %>
+<%= param 'VBR_min_bitrate_kbps', 'Int' %>
+<%= param 'VBR_max_bitrate_kbps', 'Int' %>
+
+<%= param 'VBR_hard_min', 'Bool' %>
+
+<%= param 'lowpassfreq', 'Int' %>
+<%= param 'lowpasswidth', 'Int' %>
+<%= param 'highpassfreq', 'Int' %>
+<%= param 'highpasswidth', 'Int' %>
+
+-- TODO: psycho acoustics section
+
+<%= get 'version', 'Int' %>
+<%= get 'encoder_delay', 'Int' %>
+<%= get 'encoder_padding', 'Int' %>
+<%= get 'framesize', 'Int' %>
+<%= get 'mf_samples_to_encode', 'Int' %>
+<%= get 'size_mp3buffer', 'Int' %>
+<%= get 'frameNum', 'Int' %>
+<%= get 'totalframes', 'Int' %>
+<%= get 'RadioGain', 'Int' %>
+<%= get 'AudiophileGain', 'Int' %>
+<%= get 'PeakSample', 'Float' %>
+<%= get 'noclipGainChange', 'Int' %>
+<%= get 'noclipScale', 'Float' %>
+
+{#fun init_params as ^ { `LAME' } -> `Int' #}
+
+<% %w{lame_version lame_short_version lame_very_short_version
+  psy_version lame_url lame_os_bitness}.each do |f| %>
+{#fun get_<%= f %> as ^ {} -> `String' #}
+<% end %>
+
+-- TODO: get_lame_version_numerical
+
+{#fun print_config as ^ { `LAME' } -> `()' #}
+{#fun print_internals as ^ { `LAME' } -> `()' #}
+
+{#fun encode_buffer as ^
+  { `LAME'
+  , id `Ptr CShort' -- ^ PCM data for left channel
+  , id `Ptr CShort' -- ^ PCM data for right channel
+  , `Int' -- ^ number of samples per channel
+  , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
+  , `Int' -- ^ number of valid octets in this stream
+  } -> `Int' #}
+
+{#fun encode_buffer_interleaved as ^
+  { `LAME'
+  , id `Ptr CShort' -- ^ PCM data for left and right channel, interleaved
+  , `Int' -- ^ number of samples per channel, /not/ number of samples overall
+  , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
+  , `Int' -- ^ number of valid octets in this stream
+  } -> `Int' #}
+
+{#fun encode_buffer_float as ^
+  { `LAME'
+  , id `Ptr CFloat' -- ^ PCM data for left channel
+  , id `Ptr CFloat' -- ^ PCM data for right channel
+  , `Int' -- ^ number of samples per channel
+  , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
+  , `Int' -- ^ number of valid octets in this stream
+  } -> `Int' #}
+
+-- | as 'encodeBuffer', but for 'CFloat's.
+-- !! NOTE: !! data must be scaled to +/- 1 full scale
+{#fun encode_buffer_ieee_float as ^
+  { `LAME'
+  , id `Ptr CFloat' -- ^ PCM data for left channel
+  , id `Ptr CFloat' -- ^ PCM data for right channel
+  , `Int'
+  , id `Ptr CUChar'
+  , `Int'
+  } -> `Int' #}
+
+{#fun encode_buffer_interleaved_ieee_float as ^
+  { `LAME'
+  , id `Ptr CFloat' -- ^ PCM data for left and right channel, interleaved
+  , `Int'
+  , id `Ptr CUChar'
+  , `Int'
+  } -> `Int' #}
+
+-- | as 'encodeBuffer', but for 'CDouble's.
+-- !! NOTE: !! data must be scaled to +/- 1 full scale
+{#fun encode_buffer_ieee_double as ^
+  { `LAME'
+  , id `Ptr CDouble' -- ^ PCM data for left channel
+  , id `Ptr CDouble' -- ^ PCM data for right channel
+  , `Int'
+  , id `Ptr CUChar'
+  , `Int'
+  } -> `Int' #}
+
+{#fun encode_buffer_interleaved_ieee_double as ^
+  { `LAME'
+  , id `Ptr CDouble' -- ^ PCM data for left and right channel, interleaved
+  , `Int'
+  , id `Ptr CUChar'
+  , `Int'
+  } -> `Int' #}
+
+{- | as 'encodeBuffer', but for 'CLong's.
+!! NOTE: !! data must still be scaled to be in the same range as
+'CShort', @+/- 32768@
+
+This scaling was a mistake (doesn't allow one to exploit full
+precision of type 'CLong'.  Use 'encodeBufferLong2' instead.
+-}
+{#fun encode_buffer_long as ^
+  { `LAME'
+  , id `Ptr CLong' -- ^ PCM data for left channel
+  , id `Ptr CLong' -- ^ PCM data for right channel
+  , `Int'
+  , id `Ptr CUChar'
+  , `Int'
+  } -> `Int' #}
+
+{- |
+Same as 'encodeBufferLong', but with correct scaling.
+!! NOTE: !! data must still be scaled to be in the same range as
+type 'CLong'.   Data should be in the range:  @+/- 2^(8*size(long)-1)@
+-}
+{#fun encode_buffer_long2 as ^
+  { `LAME'
+  , id `Ptr CLong' -- ^ PCM data for left channel
+  , id `Ptr CLong' -- ^ PCM data for right channel
+  , `Int'
+  , id `Ptr CUChar'
+  , `Int'
+  } -> `Int' #}
+
+{- |
+as 'encodeBuffer', but for 'CInt's.
+!! NOTE: !! input should be scaled to the maximum range of 'CInt'.
+If 'CInt' is 4 bytes, then the values should range from
++/- 2147483648.
+
+This routine does not (and cannot, without losing precision) use
+the same scaling as the rest of the 'encodeBuffer' routines.
+-}
+{#fun encode_buffer_int as ^
+  { `LAME'
+  , id `Ptr CInt' -- ^ PCM data for left channel
+  , id `Ptr CInt' -- ^ PCM data for right channel
+  , `Int' -- ^ number of samples per channel
+  , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
+  , `Int' -- number of valid octets in this stream
+  } -> `Int' #}
+
+{#fun encode_flush as ^
+  { `LAME'
+  , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
+  , `Int' -- number of valid octets in this stream
+  } -> `Int' #}
+
+{#fun encode_flush_nogap as ^
+  { `LAME'
+  , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
+  , `Int' -- number of valid octets in this stream
+  } -> `Int' #}
+
+{#fun init_bitstream as ^
+  { `LAME'
+  } -> `Int' #}
+
+-- TODO: some simple statistics
+
+{#fun get_lametag_frame as ^
+  { `LAME'
+  , id `Ptr CUChar'
+  , fromIntegral `CSize'
+  } -> `CSize' fromIntegral #}
+
+{#fun close as ^ { `LAME' } -> `Int' #}
+
+{#enum lame_errorcodes_t as ErrorCode {underscoreToCase}
+  deriving (Eq, Ord, Show, Read, Bounded) #}
+
+check :: IO Int -> IO ()
+check x = x >>= \c -> case c of
+  0 -> return ()
+  _ -> error $ show (toEnum c :: ErrorCode)
