@@ -6,7 +6,7 @@ import qualified Data.Conduit.Audio.LAME.Binding as L
 import qualified Data.Conduit as C
 import Control.Monad.Trans.Resource
 import Control.Monad.IO.Class
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import Control.Monad.Fix (fix)
 import qualified Data.Vector.Storable as V
 import qualified Data.ByteString as B
@@ -20,6 +20,8 @@ sinkMP3 fp (A.AudioSource s r c _) = (C.$$) s
     $ \fout -> do
       let o = liftIO . L.check
       o $ L.setInSamplerate lame $ round r
+      unless (c `elem ` [1, 2]) $ error $
+        "sinkMP3: only 1 or 2 channels are supported (" ++ show c ++ " given)"
       o $ L.setNumChannels lame c
       o $ L.setVBR lame L.VbrDefault
       o $ L.initParams lame
@@ -35,7 +37,13 @@ sinkMP3 fp (A.AudioSource s r c _) = (C.$$) s
           liftIO $ V.unsafeWith v $ \p -> do
             bs <- allocaArray mp3bufsize $ \buf -> do
               len <- L.encodeBufferInterleavedIeeeFloat lame (castPtr p) nsamples (castPtr buf) mp3bufsize
-              when (len < 0) $ error $ "sinkMP3: negative return value from encode fn: " ++ show len
+              when (len < 0) $ error $
+                "sinkMP3: encode function returned " ++ show len ++ "; " ++ case len of
+                  -1 -> "mp3buf was too small"
+                  -2 -> "malloc() problem"
+                  -3 -> "lame_init_params() not called"
+                  -4 -> "psycho acoustic problems"
+                  _  -> "unknown error"
               B.packCStringLen (buf, len)
             B.hPutStr fout bs
           loop
