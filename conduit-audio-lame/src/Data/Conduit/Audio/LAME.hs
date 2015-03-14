@@ -20,24 +20,22 @@ sinkMP3 fp (A.AudioSource s r c _) = (C.$$) s
     $ \fout -> do
       let o = liftIO . L.check
       o $ L.setInSamplerate lame $ round r
+      o $ L.setNumChannels lame c
       o $ L.setVBR lame L.VbrDefault
       o $ L.initParams lame
-      when (c /= 2) $ error "sinkMP3: only stereo supported"
       fix $ \loop -> C.await >>= \case
         Nothing -> liftIO $ do
-          buf <- mallocArray 7200
-          len <- L.encodeFlush lame buf 7200
-          bs <- B.packCStringLen (castPtr buf, len)
-          free buf
+          bs <- allocaArray 7200 $ \buf -> do
+            len <- L.encodeFlush lame (castPtr buf) 7200
+            B.packCStringLen (buf, len)
           B.hPutStr fout bs
         Just v -> do
           let nsamples = A.vectorFrames v c
               mp3bufsize = ceiling (1.25 * fromIntegral nsamples + 7200 :: Double) :: Int
           liftIO $ V.unsafeWith v $ \p -> do
-            buf <- mallocArray mp3bufsize
-            len <- L.encodeBufferInterleavedIeeeFloat lame (castPtr p) nsamples buf mp3bufsize
-            when (len < 0) $ error $ "sinkMP3: negative return value from encode fn: " ++ show len
-            bs <- B.packCStringLen (castPtr p, len)
-            free buf
+            bs <- allocaArray mp3bufsize $ \buf -> do
+              len <- L.encodeBufferInterleavedIeeeFloat lame (castPtr p) nsamples (castPtr buf) mp3bufsize
+              when (len < 0) $ error $ "sinkMP3: negative return value from encode fn: " ++ show len
+              B.packCStringLen (buf, len)
             B.hPutStr fout bs
           loop
