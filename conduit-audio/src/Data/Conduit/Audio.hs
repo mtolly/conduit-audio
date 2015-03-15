@@ -7,7 +7,7 @@ module Data.Conduit.Audio
   AudioSource(..)
 , Seconds, Frames, Rate, Channels, Duration(..)
   -- * Generating audio
-, silent
+, silent, sine
   -- * Combining audio
 , concatenate, mix, merge, splitChannels
   -- * Editing audio
@@ -22,6 +22,7 @@ module Data.Conduit.Audio
 , chunkSize
 , deinterleave, interleave
 , combineAudio
+, integralSample, fractionalSample
 ) where
 
 import qualified Data.Vector.Storable as V
@@ -97,6 +98,18 @@ silent (Frames fms) r c = let
     replicateM_ full $ C.yield fullChunk
     when (part /= 0) $ C.yield partChunk
   in AudioSource src r c fms
+
+sine :: (Monad m, Floating a, V.Storable a) => a -> Duration -> Rate -> AudioSource m a
+sine freq (Seconds secs) r = sine freq (Frames $ secondsToFrames secs r) r
+sine freq (Frames fms) r = AudioSource (go 0) r 1 fms where
+  valueAt posn = sin $ 2 * pi * freq * (fromIntegral posn / realToFrac r)
+  go posn = let
+    left = fms - posn
+    in if left <= chunkSize
+      then C.yield $ V.generate left $ \i -> valueAt $ i + posn
+      else let
+        firstChunk = V.generate chunkSize $ \i -> valueAt $ i + posn
+        in C.yield firstChunk >> go (posn + chunkSize)
 
 -- | Connects the end of the first audio source to the beginning of the second.
 -- The two sources must have the same sample rate and channel count.
@@ -271,3 +284,18 @@ combineAudio s1 s2 = let
                 C.leftover (Just $ v1b V.++ fromMaybe V.empty next1, next2)
                 loop
     in loop
+
+-- | Converts fractional samples in the range @[-1, 1]@ to integral samples
+-- in a two's-complement type.
+integralSample :: (RealFrac a, Integral b, Bounded b) => a -> b
+integralSample x
+  | x < (-1)  = minBound
+  | x > 1     = maxBound
+  | otherwise = let
+    result = round $ x * fromIntegral (maxBound `asTypeOf` result)
+    in result
+
+-- | Converts integral samples in a two's-complement type to fractional
+-- samples in the range @[-1, 1]@.
+fractionalSample :: (Integral a, Bounded a, Fractional b) => a -> b
+fractionalSample x = fromIntegral x / negate (fromIntegral (minBound `asTypeOf` x))
