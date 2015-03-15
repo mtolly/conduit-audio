@@ -1,10 +1,28 @@
 {- |
-Functions in this module which take a duration argument have two versions.
-The versions ending in @Frames@ accept a duration in 'Frames',
-while the untagged versions accept a duration in 'Seconds'.
+A high-level functional interface for manipulating streams of audio.
 -}
 {-# LANGUAGE LambdaCase #-}
-module Data.Conduit.Audio where
+module Data.Conduit.Audio
+( -- * Types
+  AudioSource(..)
+, Seconds, Frames, Rate, Channels, Duration(..)
+  -- * Generating audio
+, silent
+  -- * Combining audio
+, concatenate, mix, merge, splitChannels
+  -- * Editing audio
+, padStart, padEnd
+, takeStart, takeEnd
+, dropStart, dropEnd
+, fadeIn, fadeOut
+, mapSamples, gain
+  -- * Utility functions
+, vectorFrames
+, framesToSeconds, secondsToFrames
+, chunkSize
+, deinterleave, interleave
+, combineAudio
+) where
 
 import qualified Data.Vector.Storable as V
 import qualified Data.Conduit as C
@@ -15,6 +33,11 @@ import Control.Monad (replicateM_, forever, when)
 import Data.Maybe (fromMaybe)
 import Text.Printf (printf)
 
+-- | An abstraction of a stream of audio. Inside is a Conduit 'C.Source' which
+-- loads or generates smallish chunks of audio on demand. @m@ is the 'Monad'
+-- used by the 'C.Source' to produce audio. @a@ is the type of audio samples,
+-- contained in storable vectors (and thus should be 'V.Storable').
+-- Both 'Integral' and 'Fractional' sample types are supported.
 data AudioSource m a = AudioSource
   { source   :: C.Source m (V.Vector a)
   -- ^ The stream of audio chunks; samples interleaved by channel.
@@ -23,15 +46,25 @@ data AudioSource m a = AudioSource
   , channels :: Channels
   , frames   :: Frames
   -- ^ The stated length in frames of this audio stream.
-  -- Not guaranteed to be exactly frame-accurate, but should be close.
+  -- Not guaranteed to be exactly frame-accurate;
+  -- the output of some operations like resampling or time-stretching
+  -- may store only approximate frame counts.
   }
 
+-- | A duration in real time.
 type Seconds  = Double
 -- | A frame consists of one sample for each audio channel.
 type Frames   = Int
 -- | The number of samples per second.
 type Rate     = Double
+-- | The number of audio channels (1 = mono, 2 = stereo, etc.)
 type Channels = Int
+
+-- | Used for functions that accept durations in either real time or audio frames.
+data Duration
+  = Seconds Seconds
+  | Frames Frames
+  deriving (Eq, Ord, Show, Read)
 
 -- | Divides the vector length by the channel count to calculate the number of audio frames.
 vectorFrames :: (V.Storable a) => V.Vector a -> Channels -> Frames
@@ -41,9 +74,11 @@ vectorFrames v c = case quotRem (V.length v) c of
     printf "Data.Conduit.Audio.vectorFrames: block length (%d) not divisible by channel count (%d)"
     (V.length v) c
 
+-- | Uses the sample rate to convert frames to seconds.
 framesToSeconds :: Frames -> Rate -> Seconds
 framesToSeconds fms r = fromIntegral fms / r
 
+-- | Uses the sample rate to convert seconds to frames, rounding if necessary.
 secondsToFrames :: Seconds -> Rate -> Frames
 secondsToFrames secs r = round $ secs * r
 
@@ -51,8 +86,10 @@ secondsToFrames secs r = round $ secs * r
 chunkSize :: Frames
 chunkSize = 10000
 
-silentFrames :: (Monad m, Num a, V.Storable a) => Frames -> Rate -> Channels -> AudioSource m a
-silentFrames fms r c = let
+-- | Generates a stream of silence with the given parameters.
+silent :: (Monad m, Num a, V.Storable a) => Duration -> Rate -> Channels -> AudioSource m a
+silent (Seconds secs) r c = silent (Frames $ secondsToFrames secs r) r c
+silent (Frames fms) r c = let
   (full, part) = quotRem fms chunkSize
   fullChunk = V.replicate (chunkSize * c) 0
   partChunk = V.replicate (part      * c) 0
@@ -61,9 +98,8 @@ silentFrames fms r c = let
     when (part /= 0) $ C.yield partChunk
   in AudioSource src r c fms
 
-silent :: (Monad m, Num a, V.Storable a) => Seconds -> Rate -> Channels -> AudioSource m a
-silent secs r = silentFrames (secondsToFrames secs r) r
-
+-- | Connects the end of the first audio source to the beginning of the second.
+-- The two sources must have the same sample rate and channel count.
 concatenate :: (Monad m) => AudioSource m a -> AudioSource m a -> AudioSource m a
 concatenate (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | r1 /= r2 = error $
@@ -72,20 +108,25 @@ concatenate (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
     printf "Data.Conduit.Audio.concatenate: mismatched channel counts (%d and %d)" c1 c2
   | otherwise = AudioSource (s1 >> s2) r1 c1 (l1 + l2)
 
-padStartFrames, padEndFrames :: (Monad m, Num a, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
-padStartFrames fms src@(AudioSource _ r c _) = concatenate (silentFrames fms r c) src
-padEndFrames   fms src@(AudioSource _ r c _) = concatenate src (silentFrames fms r c)
+padStart, padEnd :: (Monad m, Num a, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
+-- | Adds silence to the start of the audio stream.
+padStart d src@(AudioSource _ r c _) = concatenate (silent d r c) src
+-- | Adds silence to the end of the audio stream.
+padEnd   d src@(AudioSource _ r c _) = concatenate src (silent d r c)
 
-padStart, padEnd :: (Monad m, Num a, V.Storable a) => Seconds -> AudioSource m a -> AudioSource m a
-padStart secs src@(AudioSource _ r c _) = concatenate (silent secs r c) src
-padEnd   secs src@(AudioSource _ r c _) = concatenate src (silent secs r c)
-
+-- | Splits an audio stream into several, each providing a single channel of the original stream.
 splitChannels :: (Monad m, V.Storable a) => AudioSource m a -> [AudioSource m a]
 splitChannels (AudioSource src r c l) = do
   i <- [0 .. c - 1]
   let src' = src =$= CL.map (\v -> deinterleave c v !! i)
   return $ AudioSource src' r 1 l
 
+-- | Mixes two audio streams together by adding them samplewise.
+-- The two streams must have the same sample rate and channel count.
+-- It is recommended to only mix floating-point sample types.
+-- If you mix integral types and the result goes outside of the type's range,
+-- the result will not be a normal \"clipping\" effect, but will instead overflow,
+-- producing glitchy audio.
 mix :: (Monad m, Num a, V.Storable a) => AudioSource m a -> AudioSource m a -> AudioSource m a
 mix (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | r1 /= r2 = error $
@@ -96,6 +137,8 @@ mix (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
     (combineAudio s1 s2 =$= CL.map (uncurry $ V.zipWith (+)))
     r1 c1 (max l1 l2)
 
+-- | Combines the channels of two audio streams into a single source with all the channels.
+-- The two streams must have the same sample rate, but can have any number of channels.
 merge :: (Monad m, Num a, V.Storable a) => AudioSource m a -> AudioSource m a -> AudioSource m a
 merge (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | r1 /= r2 = error $
@@ -105,11 +148,14 @@ merge (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
       (\(p1, p2) -> interleave $ deinterleave c1 p1 ++ deinterleave c2 p2))
     r1 (c1 + c2) (max l1 l2)
 
+-- | Applies a function to every sample in the audio stream.
 mapSamples :: (Monad m, V.Storable a, V.Storable b) =>
   (a -> b) -> AudioSource m a -> AudioSource m b
 mapSamples f (AudioSource s r c l) = AudioSource (s =$= CL.map (V.map f)) r c l
 
 -- | Multiplies all the audio samples by the given scaling factor.
+-- It is best to use this function on floating-point sample types,
+-- for the same reasons that apply to 'mix'.
 gain :: (Monad m, Num a, V.Storable a) => a -> AudioSource m a -> AudioSource m a
 gain d = mapSamples (* d)
 
@@ -135,8 +181,10 @@ fadeOut (AudioSource s r c l) = let
       in C.yield (V.zipWith (*) v fader) >> go (i + vectorFrames v c)
   in AudioSource (s =$= go 0) r c l
 
-takeStartFrames :: (Monad m, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
-takeStartFrames fms (AudioSource src r c l) = let
+-- | Takes no more than the given duration of audio from the start of the stream.
+takeStart :: (Monad m, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
+takeStart (Seconds secs) src = takeStart (Frames $ secondsToFrames secs $ rate src) src
+takeStart (Frames fms) (AudioSource src r c l) = let
   go left = C.await >>= \case
     Nothing -> return ()
     Just v  -> let
@@ -147,8 +195,10 @@ takeStartFrames fms (AudioSource src r c l) = let
         GT -> C.yield v >> go (left - len)
   in AudioSource (src =$= go (fms * c)) r c (min l fms)
 
-dropStartFrames :: (Monad m, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
-dropStartFrames fms (AudioSource src r c l) = let
+-- | Drops the given duration of audio from the start of the stream.
+dropStart :: (Monad m, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
+dropStart (Seconds secs) src = dropStart (Frames $ secondsToFrames secs $ rate src) src
+dropStart (Frames fms) (AudioSource src r c l) = let
   go left = C.await >>= \case
     Nothing -> return ()
     Just v  -> let
@@ -159,15 +209,15 @@ dropStartFrames fms (AudioSource src r c l) = let
         GT -> go (left - len)
   in AudioSource (src =$= go (fms * c)) r c (max 0 $ l - fms)
 
-takeEndFrames, dropEndFrames :: (Monad m, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
-takeEndFrames fms src = dropStartFrames (frames src - fms) src
-dropEndFrames fms src = takeStartFrames (frames src - fms) src
-
-takeStart, takeEnd, dropStart, dropEnd :: (Monad m, V.Storable a) => Seconds -> AudioSource m a -> AudioSource m a
-takeStart secs src = takeStartFrames (secondsToFrames secs $ rate src) src
-takeEnd   secs src = takeEndFrames   (secondsToFrames secs $ rate src) src
-dropStart secs src = dropStartFrames (secondsToFrames secs $ rate src) src
-dropEnd   secs src = dropEndFrames   (secondsToFrames secs $ rate src) src
+takeEnd, dropEnd :: (Monad m, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
+-- | Takes no more than the given duration of audio from the end of the stream.
+-- This function relies on the 'frames' value stored with the stream.
+takeEnd (Frames fms) src = dropStart (Frames $ frames src - fms) src
+takeEnd (Seconds secs) src = takeEnd (Frames $ secondsToFrames secs $ rate src) src
+-- | Drops the given duration of audio from the end of the stream.
+-- This function relies on the 'frames' value stored with the stream.
+dropEnd (Frames fms) src = takeStart (Frames $ frames src - fms) src
+dropEnd (Seconds secs) src = dropEnd (Frames $ secondsToFrames secs $ rate src) src
 
 -- | Given a vector with interleaved samples, like @[L0, R0, L1, R1, ...]@,
 -- converts it into @[[L0, L1, ...], [R0, R1, ...]]@.
