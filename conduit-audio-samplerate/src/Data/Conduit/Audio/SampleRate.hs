@@ -1,5 +1,11 @@
+{- |
+Uses @libsamplerate@ to resample a stream of audio.
+-}
 {-# LANGUAGE LambdaCase #-}
-module Data.Conduit.Audio.SampleRate where
+module Data.Conduit.Audio.SampleRate
+( resample, resampleTo
+, SRC.ConverterType(..), SRC.SRCError(..)
+) where
 
 import Data.Conduit.Audio
 import qualified Data.Conduit.Audio.SampleRate.Binding as SRC
@@ -14,17 +20,22 @@ import Control.Monad.Trans.Resource (MonadResource)
 resample
   :: (MonadResource m)
   => Double -- ^ the ratio of new sample rate to old sample rate
+  -> SRC.ConverterType
   -> AudioSource m Float
   -> AudioSource m Float
-resample rat src = resampleTo (rat * rate src) src
+resample rat ctype src = resampleTo (rat * rate src) ctype src
 
 resampleTo
-  :: (MonadResource m) => Rate -> AudioSource m Float -> AudioSource m Float
-resampleTo r' (AudioSource s r c l) = let
+  :: (MonadResource m)
+  => Rate -- ^ the new sample rate
+  -> SRC.ConverterType
+  -> AudioSource m Float
+  -> AudioSource m Float
+resampleTo r' ctype (AudioSource s r c l) = let
   rat = r' / r
   l' = round $ fromIntegral l * rat
   s' = s C.=$= C.bracketP
-    (SRC.new SRC.SincBestQuality c)
+    (SRC.new ctype c)
     SRC.delete
     (\lsr -> fix $ \loop -> C.await >>= \case
       Nothing -> return ()
@@ -55,14 +66,14 @@ resampleTo r' (AudioSource s r c l) = let
           -- we want to make sure we don't keep giving SRC too small a chunk forever
           if SRC.output_frames_gen dout /= 0
             then C.leftover $ V.drop (inUsed * c) v
-            -- ^ SRC did produce some output this time, so we're fine
+            -- SRC did produce some output this time, so we're fine
             else C.await >>= \case
               Nothing -> return ()
-              -- ^ this should never happen, right?
+              -- this should never happen, right?
               -- that would mean v was the last chunk, we told SRC it was the
               -- last chunk, but then it didn't use it all
               Just v'' -> C.leftover $ V.drop (inUsed * c) v V.++ v''
-              -- ^ if v was too small to produce anything,
+              -- if v was too small to produce anything,
               -- glue it onto v' to make a bigger chunk
         loop
     )

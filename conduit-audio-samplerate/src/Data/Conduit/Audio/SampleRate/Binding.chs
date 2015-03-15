@@ -81,6 +81,9 @@ sampleRateError fn i = do
     else peekCString ps
   throwIO $ SRCError (inThisModule fn) (fromIntegral i) s
 
+-- | @libsamplerate@ functions may throw this as an exception.
+-- Contains the function that caused the error, the numeric error code,
+-- and a human-readable message.
 data SRCError = SRCError String Int String
   deriving (Eq, Ord, Show, Read, Typeable)
 

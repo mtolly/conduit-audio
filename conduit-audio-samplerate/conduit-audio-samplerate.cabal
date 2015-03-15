@@ -9,7 +9,6 @@ cabal-version:        >= 1.10
 library
   exposed-modules:
     Data.Conduit.Audio.SampleRate
-    Data.Conduit.Audio.SampleRate.Binding
   build-depends:
     base >= 4.7 && < 4.8
     , conduit
