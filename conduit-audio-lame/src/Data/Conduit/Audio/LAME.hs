@@ -1,3 +1,6 @@
+{- |
+Uses the LAME library to write audio streams to MP3 files.
+-}
 {-# LANGUAGE LambdaCase #-}
 module Data.Conduit.Audio.LAME where
 
@@ -13,6 +16,7 @@ import qualified Data.ByteString as B
 import Foreign
 import qualified System.IO as IO
 
+-- | Saves an audio stream to an MP3 file.
 sinkMP3 :: (MonadResource m) => FilePath -> A.AudioSource m Float -> m ()
 sinkMP3 fp (A.AudioSource s r c _) = (C.$$) s
   $ C.bracketP L.init (L.check . L.close)

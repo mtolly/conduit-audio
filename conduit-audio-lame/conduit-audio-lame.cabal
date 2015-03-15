@@ -9,6 +9,7 @@ cabal-version:        >= 1.10
 library
   exposed-modules:
     Data.Conduit.Audio.LAME
+  other-modules:
     Data.Conduit.Audio.LAME.Binding
   build-depends:
     base >= 4.7 && < 4.8
