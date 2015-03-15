@@ -99,7 +99,7 @@ silent (Frames fms) r c = let
     when (part /= 0) $ C.yield partChunk
   in AudioSource src r c fms
 
--- | Generates a sine wave with the given frequency.
+-- | Generates a mono sine wave with the given frequency.
 sine :: (Monad m, Floating a, V.Storable a) => a -> Duration -> Rate -> AudioSource m a
 sine freq (Seconds secs) r = sine freq (Frames $ secondsToFrames secs r) r
 sine freq (Frames fms) r = AudioSource (go 0) r 1 fms where
@@ -251,7 +251,8 @@ interleave vs = let
     in (vs !! r) V.! q
 
 -- | Combines two audio streams to produce pairs of same-size chunks.
--- If one stream is smaller, its end will be padded with silence to match the larger one.
+-- If one stream is shorter, its end will be padded with silence to match the longer one.
+-- This function is used to implement 'mix' and 'merge'.
 combineAudio
   :: (Num a, V.Storable a, Monad m)
   => C.Source m (V.Vector a)
@@ -259,31 +260,28 @@ combineAudio
   -> C.Source m (V.Vector a, V.Vector a)
 combineAudio s1 s2 = let
   justify src = (src =$= CL.map Just) >> forever (C.yield Nothing)
-  nothingPanic = error "combineAudio: internal error! reached end of infinite stream"
+  await' = C.await >>= \case
+    Nothing -> error
+      "Data.Conduit.Audio.combineAudio: internal error! reached end of infinite stream"
+    Just x  -> return x
   zeroOut = V.map $ const 0
   in zipSources (justify s1) (justify s2) =$= let
-    loop = C.await >>= \case
-      Nothing -> nothingPanic
-      Just pair -> case pair of
-        (Nothing, Nothing) -> return ()
-        (Just v1, Nothing) -> C.yield (v1, zeroOut v1) >> loop
-        (Nothing, Just v2) -> C.yield (zeroOut v2, v2) >> loop
-        (Just v1, Just v2) -> case compare (V.length v1) (V.length v2) of
-          EQ -> C.yield (v1, v2) >> loop
-          LT -> let
-            (v2a, v2b) = V.splitAt (V.length v1) v2
-            in C.yield (v1, v2a) >> C.await >>= \case
-              Nothing -> nothingPanic
-              Just (next1, next2) -> do
-                C.leftover (next1, Just $ v2b V.++ fromMaybe V.empty next2)
-                loop
-          GT -> let
-            (v1a, v1b) = V.splitAt (V.length v2) v1
-            in C.yield (v1a, v2) >> C.await >>= \case
-              Nothing -> nothingPanic
-              Just (next1, next2) -> do
-                C.leftover (Just $ v1b V.++ fromMaybe V.empty next1, next2)
-                loop
+    loop = await' >>= \case
+      (Nothing, Nothing) -> return ()
+      (Just v1, Nothing) -> C.yield (v1, zeroOut v1) >> loop
+      (Nothing, Just v2) -> C.yield (zeroOut v2, v2) >> loop
+      (Just v1, Just v2) -> case compare (V.length v1) (V.length v2) of
+        EQ -> C.yield (v1, v2) >> loop
+        LT -> let
+          (v2a, v2b) = V.splitAt (V.length v1) v2
+          in C.yield (v1, v2a) >> await' >>= \(next1, next2) -> do
+            C.leftover (next1, Just $ v2b V.++ fromMaybe V.empty next2)
+            loop
+        GT -> let
+          (v1a, v1b) = V.splitAt (V.length v2) v1
+          in C.yield (v1a, v2) >> await' >>= \(next1, next2) -> do
+            C.leftover (Just $ v1b V.++ fromMaybe V.empty next1, next2)
+            loop
     in loop
 
 -- | Converts fractional samples in the range @[-1, 1]@ to integral samples
