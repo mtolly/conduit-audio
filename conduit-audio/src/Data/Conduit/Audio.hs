@@ -99,6 +99,7 @@ silent (Frames fms) r c = let
     when (part /= 0) $ C.yield partChunk
   in AudioSource src r c fms
 
+-- | Generates a sine wave with the given frequency.
 sine :: (Monad m, Floating a, V.Storable a) => a -> Duration -> Rate -> AudioSource m a
 sine freq (Seconds secs) r = sine freq (Frames $ secondsToFrames secs r) r
 sine freq (Frames fms) r = AudioSource (go 0) r 1 fms where
