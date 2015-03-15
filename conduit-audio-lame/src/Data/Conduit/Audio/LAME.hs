@@ -31,6 +31,12 @@ sinkMP3 fp (A.AudioSource s r c _) = (C.$$) s
             len <- L.encodeFlush lame (castPtr buf) 7200
             B.packCStringLen (buf, len)
           B.hPutStr fout bs
+          IO.hSeek fout IO.AbsoluteSeek 0
+          tags <- allocaArray 100000 $ \buf -> do
+            len <- L.getLametagFrame lame (castPtr buf) 100000
+            when (len < 0) $ error "sinkMP3: couldn't get lame tag frame (buffer too small)"
+            B.packCStringLen (buf, fromIntegral len)
+          B.hPutStr fout tags
         Just v -> do
           let nsamples = A.vectorFrames v c
               mp3bufsize = ceiling (1.25 * fromIntegral nsamples + 7200 :: Double) :: Int
