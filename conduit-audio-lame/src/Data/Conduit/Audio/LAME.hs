@@ -46,7 +46,9 @@ sinkMP3 fp (A.AudioSource s r c _) = (C.$$) s
               mp3bufsize = ceiling (1.25 * fromIntegral nsamples + 7200 :: Double) :: Int
           liftIO $ V.unsafeWith v $ \p -> do
             bs <- allocaArray mp3bufsize $ \buf -> do
-              len <- L.encodeBufferInterleavedIeeeFloat lame (castPtr p) nsamples (castPtr buf) mp3bufsize
+              len <- case c of
+                1 -> L.encodeBufferIeeeFloat lame (castPtr p) nullPtr nsamples (castPtr buf) mp3bufsize
+                _ -> L.encodeBufferInterleavedIeeeFloat lame (castPtr p) nsamples (castPtr buf) mp3bufsize
               when (len < 0) $ error $
                 "sinkMP3: encode function returned " ++ show len ++ "; " ++ case len of
                   -1 -> "mp3buf was too small"
