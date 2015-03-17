@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 module Data.Conduit.Audio.Sndfile
-( sourceSnd
+( sourceSnd, sourceSndFrom
 , sinkSnd
 ) where
 
@@ -18,17 +18,23 @@ import Control.Monad.Trans.Resource (MonadResource)
 sourceSnd
   :: (MonadResource m, Snd.Sample a)
   => FilePath
-  -> Duration
-  -- ^ initial position to seek to in the file (more efficient than using 'dropStart')
   -> IO (AudioSource m a)
-sourceSnd fp (Seconds secs) = do
+sourceSnd = sourceSndFrom $ Frames 0
+
+sourceSndFrom
+  :: (MonadResource m, Snd.Sample a)
+  => Duration
+  -- ^ Initial position to seek to in the file (more efficient than using 'dropStart')
+  -> FilePath
+  -> IO (AudioSource m a)
+sourceSndFrom (Seconds secs) fp = do
   info <- Snd.getFileInfo fp
-  sourceSnd fp $ Frames $ secondsToFrames secs $ fromIntegral $ Snd.samplerate info
-sourceSnd fp (Frames fms) = do
+  sourceSndFrom (Frames $ secondsToFrames secs $ fromIntegral $ Snd.samplerate info) fp
+sourceSndFrom (Frames fms) fp = do
   -- TODO: allow user to supply Snd.Format for raw files?
   info <- Snd.getFileInfo fp
   let r = fromIntegral $ Snd.samplerate info
-      c = Snd.channels   info
+      c =                Snd.channels   info
       src = C.bracketP
         (Snd.openFile fp Snd.ReadMode Snd.defaultInfo)
         Snd.hClose

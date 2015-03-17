@@ -38,7 +38,7 @@ import Text.Printf (printf)
 -- loads or generates smallish chunks of audio on demand. @m@ is the 'Monad'
 -- used by the 'C.Source' to produce audio. @a@ is the type of audio samples,
 -- contained in storable vectors (and thus should be 'V.Storable').
--- Both 'Integral' and 'Fractional' sample types are supported.
+-- Both (signed) 'Integral' and 'Fractional' sample types are supported.
 data AudioSource m a = AudioSource
   { source   :: C.Source m (V.Vector a)
   -- ^ The stream of audio chunks; samples interleaved by channel.
@@ -174,6 +174,7 @@ gain :: (Monad m, Num a, V.Storable a) => a -> AudioSource m a -> AudioSource m 
 gain d = mapSamples (* d)
 
 -- | Fades the audio from start (silent) to end (original volume).
+-- This function relies on the 'frames' value stored with the stream.
 fadeIn :: (Monad m, Ord a, Fractional a, V.Storable a) => AudioSource m a -> AudioSource m a
 fadeIn (AudioSource s r c l) = let
   go i = C.await >>= \case
@@ -185,6 +186,7 @@ fadeIn (AudioSource s r c l) = let
   in AudioSource (s =$= go 0) r c l
 
 -- | Fades the audio from start (original volume) to end (silent).
+-- This function relies on the 'frames' value stored with the stream.
 fadeOut :: (Monad m, Ord a, Fractional a, V.Storable a) => AudioSource m a -> AudioSource m a
 fadeOut (AudioSource s r c l) = let
   go i = C.await >>= \case
@@ -284,12 +286,18 @@ combineAudio s1 s2 = let
             loop
     in loop
 
+-- See http://blog.bjornroche.com/2009/12/int-float-int-its-jungle-out-there.html
+-- for a discussion of different int/float sample conversion methods.
+-- The ones below multiply/divide by 0x7FFF (or equivalent).
+-- Int16 -> Float -> Int16 conversions are transparent:
+-- all (\i -> i == integralSample (fractionalSample i :: Float)) [minBound :: Int16 .. maxBound]
+
 -- | Converts fractional samples in the range @[-1, 1]@ to integral samples
--- in a two's-complement type.
+-- in a two's-complement type. Fractional samples beyond that range are clamped.
 integralSample :: (RealFrac a, Integral b, Bounded b) => a -> b
 integralSample x
-  | x < (-1)  = minBound
-  | x > 1     = maxBound
+  | x <= (-1) = minBound
+  | x >= 1    = maxBound
   | otherwise = let
     result = round $ x * fromIntegral (maxBound `asTypeOf` result)
     in result
@@ -297,4 +305,4 @@ integralSample x
 -- | Converts integral samples in a two's-complement type to fractional
 -- samples in the range @[-1, 1]@.
 fractionalSample :: (Integral a, Bounded a, Fractional b) => a -> b
-fractionalSample x = fromIntegral x / negate (fromIntegral (minBound `asTypeOf` x))
+fractionalSample x = fromIntegral x / fromIntegral (maxBound `asTypeOf` x)
