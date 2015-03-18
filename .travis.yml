@@ -4,6 +4,7 @@ ghc:
 install:
   - sudo apt-get update -qq
   - sudo apt-get install libsndfile-dev libsamplerate0-dev libmp3lame0
+  - cabal install alex happy
   - cabal install c2hs
 script:
   - cabal install ./conduit-audio*/
