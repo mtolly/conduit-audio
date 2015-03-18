@@ -8,6 +8,13 @@ category:             Sound
 build-type:           Simple
 cabal-version:        >= 1.10
 synopsis:             conduit-audio interface to the libsamplerate resampling library
+description:
+  A binding to the @libsamplerate@ library for use with @conduit-audio@,
+  to resample audio streams.
+  .
+  Requires the @libsamplerate@ library.
+  On Ubuntu, @apt-get install libsamplerate0-dev@;
+  on Mac with Homebrew, @brew install libsamplerate@.
 
 library
   exposed-modules:
@@ -17,10 +24,10 @@ library
   build-depends:
     base >= 4.6 && < 4.8
     , conduit
+    , conduit-audio >= 0.1 && < 0.2
     , resourcet
+    , transformers >= 0.3 && < 0.5
     , vector
-    , transformers >= 0.4
-    , conduit-audio
   hs-source-dirs:       src
   default-language:     Haskell2010
   ghc-options:          -Wall -O2

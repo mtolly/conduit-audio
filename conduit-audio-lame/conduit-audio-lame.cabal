@@ -8,6 +8,13 @@ category:             Sound
 build-type:           Simple
 cabal-version:        >= 1.10
 synopsis:             conduit-audio interface to the LAME MP3 library
+description:
+  A simple binding to the LAME MP3 library for use with @conduit-audio@,
+  to save audio streams as MP3 files.
+  .
+  Requires the LAME library.
+  On Ubuntu, @apt-get install libmp3lame-dev@;
+  on Mac with Homebrew, @brew install lame@.
 
 library
   exposed-modules:
@@ -16,12 +23,12 @@ library
     Data.Conduit.Audio.LAME.Binding
   build-depends:
     base >= 4.6 && < 4.8
-    , conduit-audio
-    , conduit
-    , resourcet
-    , transformers
-    , vector
     , bytestring
+    , conduit
+    , conduit-audio >= 0.1 && < 0.2
+    , resourcet
+    , transformers >= 0.3 && < 0.5
+    , vector
   hs-source-dirs:       src
   default-language:     Haskell2010
   ghc-options:          -Wall -O2
