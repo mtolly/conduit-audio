@@ -15,7 +15,7 @@ library
   other-modules:
     Data.Conduit.Audio.SampleRate.Binding
   build-depends:
-    base >= 4.7 && < 4.8
+    base >= 4.6 && < 4.8
     , conduit
     , resourcet
     , vector

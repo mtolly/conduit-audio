@@ -15,7 +15,7 @@ library
   other-modules:
     Data.Conduit.Audio.LAME.Binding
   build-depends:
-    base >= 4.7 && < 4.8
+    base >= 4.6 && < 4.8
     , conduit-audio
     , conduit
     , resourcet

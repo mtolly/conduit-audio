@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 module Data.Conduit.Audio.Sndfile
 ( sourceSnd, sourceSndFrom
 , sinkSnd
@@ -40,7 +39,7 @@ sourceSndFrom (Frames fms) fp = do
         Snd.hClose
         $ \h -> do
           liftIO $ void $ Snd.hSeek h Snd.AbsoluteSeek fms
-          fix $ \loop -> liftIO (Snd.hGetBuffer h chunkSize) >>= \case
+          fix $ \loop -> liftIO (Snd.hGetBuffer h chunkSize) >>= \mx -> case mx of
             Nothing  -> return ()
             Just buf -> do
               C.yield $ SndBuf.fromBuffer buf

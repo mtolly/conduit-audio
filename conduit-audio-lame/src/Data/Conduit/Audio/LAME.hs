@@ -1,7 +1,6 @@
 {- |
 Uses the LAME library to write audio streams to MP3 files.
 -}
-{-# LANGUAGE LambdaCase #-}
 module Data.Conduit.Audio.LAME where
 
 import qualified Data.Conduit.Audio as A
@@ -29,7 +28,7 @@ sinkMP3 fp (A.AudioSource s r c _) = (C.$$) s
       o $ L.setNumChannels lame c
       o $ L.setVBR lame L.VbrDefault
       o $ L.initParams lame
-      fix $ \loop -> C.await >>= \case
+      fix $ \loop -> C.await >>= \mx -> case mx of
         Nothing -> liftIO $ do
           bs <- allocaArray 7200 $ \buf -> do
             len <- L.encodeFlush lame (castPtr buf) 7200

@@ -1,7 +1,6 @@
 {- |
 Uses @libsamplerate@ to resample a stream of audio.
 -}
-{-# LANGUAGE LambdaCase #-}
 module Data.Conduit.Audio.SampleRate
 ( resample, resampleTo
 , SRC.ConverterType(..), SRC.SRCError(..)
@@ -37,10 +36,10 @@ resampleTo r' ctype (AudioSource s r c l) = let
   s' = s C.=$= C.bracketP
     (SRC.new ctype c)
     SRC.delete
-    (\lsr -> fix $ \loop -> C.await >>= \case
+    (\lsr -> fix $ \loop -> C.await >>= \mx -> case mx of
       Nothing -> return ()
       Just v  -> do
-        isEnd <- C.await >>= \case
+        isEnd <- C.await >>= \my -> case my of
           Nothing -> return True
           Just v' -> do
             C.leftover v'
@@ -67,7 +66,7 @@ resampleTo r' ctype (AudioSource s r c l) = let
           if SRC.output_frames_gen dout /= 0
             then C.leftover $ V.drop (inUsed * c) v
             -- SRC did produce some output this time, so we're fine
-            else C.await >>= \case
+            else C.await >>= \mz -> case mz of
               Nothing -> return ()
               -- this should never happen, right?
               -- that would mean v was the last chunk, we told SRC it was the

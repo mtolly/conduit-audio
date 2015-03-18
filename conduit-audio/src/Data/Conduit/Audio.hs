@@ -1,7 +1,6 @@
 {- |
 A high-level functional interface for manipulating streams of audio.
 -}
-{-# LANGUAGE LambdaCase #-}
 module Data.Conduit.Audio
 ( -- * Types
   AudioSource(..)
@@ -177,7 +176,7 @@ gain d = mapSamples (* d)
 -- This function relies on the 'frames' value stored with the stream.
 fadeIn :: (Monad m, Ord a, Fractional a, V.Storable a) => AudioSource m a -> AudioSource m a
 fadeIn (AudioSource s r c l) = let
-  go i = C.await >>= \case
+  go i = C.await >>= \mx -> case mx of
     Nothing -> return ()
     Just v  -> let
       fader = V.generate (V.length v) $ \j ->
@@ -189,7 +188,7 @@ fadeIn (AudioSource s r c l) = let
 -- This function relies on the 'frames' value stored with the stream.
 fadeOut :: (Monad m, Ord a, Fractional a, V.Storable a) => AudioSource m a -> AudioSource m a
 fadeOut (AudioSource s r c l) = let
-  go i = C.await >>= \case
+  go i = C.await >>= \mx -> case mx of
     Nothing -> return ()
     Just v  -> let
       fader = V.generate (V.length v) $ \j ->
@@ -201,7 +200,7 @@ fadeOut (AudioSource s r c l) = let
 takeStart :: (Monad m, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
 takeStart (Seconds secs) src = takeStart (Frames $ secondsToFrames secs $ rate src) src
 takeStart (Frames fms) (AudioSource src r c l) = let
-  go left = C.await >>= \case
+  go left = C.await >>= \mx -> case mx of
     Nothing -> return ()
     Just v  -> let
       len = V.length v
@@ -215,7 +214,7 @@ takeStart (Frames fms) (AudioSource src r c l) = let
 dropStart :: (Monad m, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
 dropStart (Seconds secs) src = dropStart (Frames $ secondsToFrames secs $ rate src) src
 dropStart (Frames fms) (AudioSource src r c l) = let
-  go left = C.await >>= \case
+  go left = C.await >>= \mx -> case mx of
     Nothing -> return ()
     Just v  -> let
       len = V.length v
@@ -262,13 +261,13 @@ combineAudio
   -> C.Source m (V.Vector a, V.Vector a)
 combineAudio s1 s2 = let
   justify src = (src =$= CL.map Just) >> forever (C.yield Nothing)
-  await' = C.await >>= \case
+  await' = C.await >>= \mx -> case mx of
     Nothing -> error
       "Data.Conduit.Audio.combineAudio: internal error! reached end of infinite stream"
     Just x  -> return x
   zeroOut = V.map $ const 0
   in zipSources (justify s1) (justify s2) =$= let
-    loop = await' >>= \case
+    loop = await' >>= \pair -> case pair of
       (Nothing, Nothing) -> return ()
       (Just v1, Nothing) -> C.yield (v1, zeroOut v1) >> loop
       (Nothing, Just v2) -> C.yield (zeroOut v2, v2) >> loop
