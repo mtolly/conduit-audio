@@ -2,7 +2,7 @@
 
 A suite of Haskell packages that provide a functional, efficient way to work with audio files.
 
-The following sample program uses @libsndfile@ to load two audio files,
+The following sample program uses `libsndfile` to load two audio files,
 mixes them together, resamples to 48 kHz, and saves the result to an MP3 file with LAME:
 
     main = do
