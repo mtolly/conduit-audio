@@ -8,3 +8,4 @@ install:
   - cabal install c2hs
 script:
   - cabal install ./conduit-audio*/
+  - cabal exec -- ghc test.hs -Wall
