@@ -3,7 +3,9 @@
 A suite of Haskell packages that provide a functional, efficient way to work with audio files.
 
 The following sample program uses `libsndfile` to load two audio files,
-mixes them together, resamples to 48 kHz, and saves the result to an MP3 file with LAME:
+mixes them together,
+resamples to 48 kHz with `libsamplerate`,
+and saves the result to an MP3 file with LAME:
 
     main = do
       src1 <- sourceSnd "file1.flac"
@@ -11,5 +13,5 @@ mixes them together, resamples to 48 kHz, and saves the result to an MP3 file wi
       runResourceT $ sinkMP3 "out.mp3" $
         resampleTo 48000 SincBestQuality $ mix src1 src2
 
-By using `conduit` to stream the audio files in small portions,
-this program runs in more-or-less constant memory.
+This program runs in constant memory,
+by using `conduit` to stream the audio files in small portions.
