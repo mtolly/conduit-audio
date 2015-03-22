@@ -20,7 +20,6 @@ module Data.Conduit.Audio
 , framesToSeconds, secondsToFrames
 , chunkSize
 , deinterleave, interleave
-, combineAudio
 , integralSample, fractionalSample
 ) where
 
@@ -147,7 +146,7 @@ mix (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | c1 /= c2 = error $
     printf "Data.Conduit.Audio.mix: mismatched channel counts (%d and %d)" c1 c2
   | otherwise = AudioSource
-    (combineAudio s1 s2 =$= CL.map (uncurry $ V.zipWith (+)))
+    (combineAudio c1 c2 s1 s2 =$= CL.map (uncurry $ V.zipWith (+)))
     r1 c1 (max l1 l2)
 
 -- | Combines the channels of two audio streams into a single source with all the channels.
@@ -157,7 +156,7 @@ merge (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | r1 /= r2 = error $
     printf "Data.Conduit.Audio.merge: mismatched rates (%d and %d)" r1 r2
   | otherwise = AudioSource
-    (combineAudio s1 s2 =$= CL.map
+    (combineAudio c1 c2 s1 s2 =$= CL.map
       (\(p1, p2) -> interleave $ deinterleave c1 p1 ++ deinterleave c2 p2))
     r1 (c1 + c2) (max l1 l2)
 
@@ -251,35 +250,40 @@ interleave vs = let
     (q, r) = quotRem i n
     in (vs !! r) V.! q
 
--- | Combines two audio streams to produce pairs of same-size chunks.
+-- | Combines two audio streams to produce pairs of same-length (in frames) chunks.
 -- If one stream is shorter, its end will be padded with silence to match the longer one.
 -- This function is used to implement 'mix' and 'merge'.
 combineAudio
   :: (Num a, V.Storable a, Monad m)
-  => C.Source m (V.Vector a)
+  => Int
+  -> Int
+  -> C.Source m (V.Vector a)
   -> C.Source m (V.Vector a)
   -> C.Source m (V.Vector a, V.Vector a)
-combineAudio s1 s2 = let
+combineAudio c1 c2 s1 s2 = let
   justify src = (src =$= CL.map Just) >> forever (C.yield Nothing)
   await' = C.await >>= \mx -> case mx of
     Nothing -> error
       "Data.Conduit.Audio.combineAudio: internal error! reached end of infinite stream"
     Just x  -> return x
-  zeroOut = V.map $ const 0
   in zipSources (justify s1) (justify s2) =$= let
     loop = await' >>= \pair -> case pair of
       (Nothing, Nothing) -> return ()
-      (Just v1, Nothing) -> C.yield (v1, zeroOut v1) >> loop
-      (Nothing, Just v2) -> C.yield (zeroOut v2, v2) >> loop
-      (Just v1, Just v2) -> case compare (V.length v1) (V.length v2) of
+      (Just v1, Nothing) -> let
+        v2 = V.replicate (vectorFrames v1 c1 * c2) 0
+        in C.yield (v1, v2) >> loop
+      (Nothing, Just v2) -> let
+        v1 = V.replicate (vectorFrames v2 c2 * c1) 0
+        in C.yield (v1, v2) >> loop
+      (Just v1, Just v2) -> case compare (vectorFrames v1 c1) (vectorFrames v2 c2) of
         EQ -> C.yield (v1, v2) >> loop
         LT -> let
-          (v2a, v2b) = V.splitAt (V.length v1) v2
+          (v2a, v2b) = V.splitAt (vectorFrames v1 c1 * c2) v2
           in C.yield (v1, v2a) >> await' >>= \(next1, next2) -> do
             C.leftover (next1, Just $ v2b V.++ fromMaybe V.empty next2)
             loop
         GT -> let
-          (v1a, v1b) = V.splitAt (V.length v2) v1
+          (v1a, v1b) = V.splitAt (vectorFrames v2 c2 * c1) v1
           in C.yield (v1a, v2) >> await' >>= \(next1, next2) -> do
             C.leftover (Just $ v1b V.++ fromMaybe V.empty next1, next2)
             loop
