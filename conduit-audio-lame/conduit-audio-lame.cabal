@@ -24,7 +24,7 @@ library
   other-modules:
     Data.Conduit.Audio.LAME.Binding
   build-depends:
-    base >= 4.6 && < 4.8
+    base >= 4.6 && < 4.9
     , bytestring
     , conduit
     , conduit-audio >= 0.1 && < 0.2

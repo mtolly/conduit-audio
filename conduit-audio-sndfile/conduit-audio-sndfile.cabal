@@ -18,7 +18,7 @@ library
   exposed-modules:
     Data.Conduit.Audio.Sndfile
   build-depends:
-    base >= 4.6 && < 4.8
+    base >= 4.6 && < 4.9
     , conduit
     , conduit-audio >= 0.1 && < 0.2
     , hsndfile

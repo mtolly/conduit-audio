@@ -5,6 +5,7 @@ The @SRC_DATA@ struct is split into two Haskell types
 for the input ('DataIn') and output ('DataOut') parts.
 -}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 module Data.Conduit.Audio.SampleRate.Binding
 ( new, delete, process, reset, setRatio
 , State, DataIn(..), DataOut(..), ConverterType(..), SRCError(..)
@@ -13,7 +14,9 @@ module Data.Conduit.Audio.SampleRate.Binding
 import Foreign hiding (new)
 import Foreign.C
 import Control.Monad (when)
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
 import Data.Typeable (Typeable)
 import Control.Exception (Exception, throwIO)
 

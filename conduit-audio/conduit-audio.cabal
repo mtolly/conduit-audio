@@ -28,7 +28,7 @@ library
   exposed-modules:
     Data.Conduit.Audio
   build-depends:
-    base >= 4.6 && < 4.8
+    base >= 4.6 && < 4.9
     , conduit
     , vector
   hs-source-dirs:       src
