@@ -1,0 +1,13 @@
+flags: {}
+packages:
+- conduit-audio/
+- conduit-audio-lame/
+- conduit-audio-samplerate/
+- conduit-audio-sndfile/
+- conduit-audio-openal/
+- conduit-audio-ao/
+extra-deps:
+- hsndfile-0.7.1
+- hsndfile-vector-0.5.2
+- al-0.1.4
+resolver: nightly-2015-06-28
