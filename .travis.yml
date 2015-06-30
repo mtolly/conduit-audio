@@ -8,5 +8,5 @@ install:
   - cabal install alex happy
   - cabal install c2hs
 script:
-  - cabal install ./conduit-audio*/
+  - cabal install ./conduit-audio ./conduit-audio-lame ./conduit-audio-sndfile ./conduit-audio-samplerate
   - ghc test.hs -Wall
