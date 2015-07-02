@@ -21,7 +21,6 @@ description:
 library
   exposed-modules:
     Data.Conduit.Audio.LAME
-  other-modules:
     Data.Conduit.Audio.LAME.Binding
   build-depends:
     base >= 4.6 && < 4.9
@@ -36,6 +35,7 @@ library
   ghc-options:          -Wall -O2
   extra-libraries:
     mp3lame
+  build-tools: c2hs
 
 source-repository head
   type:                 git

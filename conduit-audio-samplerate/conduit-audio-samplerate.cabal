@@ -21,7 +21,6 @@ description:
 library
   exposed-modules:
     Data.Conduit.Audio.SampleRate
-  other-modules:
     Data.Conduit.Audio.SampleRate.Binding
   build-depends:
     base >= 4.6 && < 4.9
@@ -35,6 +34,7 @@ library
   ghc-options:          -Wall -O2
   extra-libraries:
     samplerate
+  build-tools: c2hs
 
 source-repository head
   type:                 git

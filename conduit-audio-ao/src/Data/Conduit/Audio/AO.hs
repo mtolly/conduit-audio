@@ -1,4 +1,7 @@
-module Data.Conduit.Audio.AO where
+module Data.Conduit.Audio.AO
+( withAO
+, playSource
+) where
 
 import qualified Data.Conduit as C
 import Data.Conduit.Audio
@@ -24,7 +27,7 @@ playSource src = source src C.$$ getDevice where
           , AO.byteFormat = AO.AO_FMT_NATIVE
           , AO.matrix = Nothing
           }
-        start = AO.withSampleFormat fmt $ \pfmt -> AO.openLive devID pfmt nullPtr
+        start = AO.openLive devID fmt $ AO.Option []
     C.bracketP start (void . AO.close) useDevice
   useDevice dev = C.await >>= \res -> case res of
     Nothing -> return ()

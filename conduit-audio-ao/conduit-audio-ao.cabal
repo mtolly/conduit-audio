@@ -24,6 +24,7 @@ library
   ghc-options:          -Wall
   extra-libraries:
     ao
+  build-tools: c2hs
 
 source-repository head
   type:                 git

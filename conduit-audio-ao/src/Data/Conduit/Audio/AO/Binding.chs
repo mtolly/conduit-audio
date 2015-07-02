@@ -1,4 +1,3 @@
-{-# LANGUAGE NondecreasingIndentation #-}
 module Data.Conduit.Audio.AO.Binding where
 
 import Foreign
@@ -51,18 +50,17 @@ data Channel
 withOption :: Option -> (Option_ -> IO a) -> IO a
 withOption (Option dict) act = go nullPtr $ reverse dict where
   go p [] = act p
-  go p ((k, v) : rest) = do
-    allocaBytes {#sizeof ao_option #} $ \p' -> do
-    withCString k $ \pk -> do
+  go p ((k, v) : rest) =
+    allocaBytes {#sizeof ao_option #} $ \p' ->
+    withCString k $ \pk ->
     withCString v $ \pv -> do
-    {#set ao_option.key   #} p' pk
-    {#set ao_option.value #} p' pv
-    {#set ao_option.next  #} p' p
-    go p' rest
+      {#set ao_option.key   #} p' pk
+      {#set ao_option.value #} p' pv
+      {#set ao_option.next  #} p' p
+      go p' rest
 
 withSampleFormat :: SampleFormat -> (SampleFormat_ -> IO a) -> IO a
-withSampleFormat fmt act = do
-  allocaBytes {#sizeof ao_sample_format #} $ \p -> do
+withSampleFormat fmt act = allocaBytes {#sizeof ao_sample_format #} $ \p -> do
   {#set ao_sample_format.bits #} p $ bits fmt
   {#set ao_sample_format.rate #} p $ rate fmt
   {#set ao_sample_format.channels #} p $ channels fmt
@@ -79,6 +77,12 @@ withSampleFormat fmt act = do
 {#fun initialize as ^ {} -> `()' #}
 {#fun shutdown as ^ {} -> `()' #}
 {#fun default_driver_id as defaultDriverID {} -> `CInt' #}
-{#fun open_live as ^ { `CInt', `SampleFormat_', `Option_' } -> `Device_' #}
+{#fun open_live as c_openLive { `CInt', `SampleFormat_', `Option_' } -> `Device_' #}
 {#fun play as ^ { `Device_', castPtr `Ptr Word8', `Int32' } -> `CInt' #}
 {#fun close as ^ { `Device_' } -> `CInt' #}
+
+openLive :: CInt -> SampleFormat -> Option -> IO Device_
+openLive devID fmt opt =
+  withSampleFormat fmt $ \f ->
+  withOption opt $ \o ->
+  c_openLive devID f o
