@@ -21,6 +21,7 @@ module Data.Conduit.Audio
 , chunkSize
 , deinterleave, interleave
 , integralSample, fractionalSample
+, reorganize
 ) where
 
 import qualified Data.Vector.Storable as V
@@ -29,7 +30,6 @@ import Data.Conduit ((=$=))
 import qualified Data.Conduit.List as CL
 import Data.Conduit.Internal (zipSources)
 import Control.Monad (replicateM_, forever, when)
-import Data.Maybe (fromMaybe)
 import Text.Printf (printf)
 
 -- | An abstraction of a stream of audio. Inside is a Conduit 'C.Source' which
@@ -83,7 +83,7 @@ secondsToFrames secs r = round $ secs * r
 
 -- | An arbitrary size, in frames, for smallish audio chunks.
 chunkSize :: Frames
-chunkSize = 10000
+chunkSize = 5000
 
 -- | Generates a stream of silence with the given parameters.
 silent :: (Monad m, Num a, V.Storable a) => Duration -> Rate -> Channels -> AudioSource m a
@@ -130,7 +130,7 @@ padEnd   d src@(AudioSource _ r c _) = concatenate src (silent d r c)
 splitChannels :: (Monad m, V.Storable a) => AudioSource m a -> [AudioSource m a]
 splitChannels (AudioSource src r c l) = do
   i <- [0 .. c - 1]
-  let src' = src =$= CL.map (\v -> deinterleave c v !! i)
+  let src' = C.mapOutput (\v -> deinterleave c v !! i) src
   return $ AudioSource src' r 1 l
 
 -- | Mixes two audio streams together by adding them samplewise.
@@ -140,30 +140,30 @@ splitChannels (AudioSource src r c l) = do
 -- the result will not be a normal \"clipping\" effect, but will instead overflow,
 -- producing glitchy audio.
 mix :: (Monad m, Num a, V.Storable a) => AudioSource m a -> AudioSource m a -> AudioSource m a
-mix (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
+mix a1@(AudioSource _ r1 c1 l1) a2@(AudioSource _ r2 c2 l2)
   | r1 /= r2 = error $
     printf "Data.Conduit.Audio.mix: mismatched rates (%d and %d)" r1 r2
   | c1 /= c2 = error $
     printf "Data.Conduit.Audio.mix: mismatched channel counts (%d and %d)" c1 c2
   | otherwise = AudioSource
-    (combineAudio c1 c2 s1 s2 =$= CL.map (uncurry $ V.zipWith (+)))
+    (C.mapOutput (uncurry $ V.zipWith (+)) $ combineAudio a1 a2)
     r1 c1 (max l1 l2)
 
 -- | Combines the channels of two audio streams into a single source with all the channels.
 -- The two streams must have the same sample rate, but can have any number of channels.
 merge :: (Monad m, Num a, V.Storable a) => AudioSource m a -> AudioSource m a -> AudioSource m a
-merge (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
+merge a1@(AudioSource _ r1 c1 l1) a2@(AudioSource _ r2 c2 l2)
   | r1 /= r2 = error $
     printf "Data.Conduit.Audio.merge: mismatched rates (%d and %d)" r1 r2
   | otherwise = AudioSource
-    (combineAudio c1 c2 s1 s2 =$= CL.map
-      (\(p1, p2) -> interleave $ deinterleave c1 p1 ++ deinterleave c2 p2))
+    (C.mapOutput mergeChunk $ combineAudio a1 a2)
     r1 (c1 + c2) (max l1 l2)
+  where mergeChunk (p1, p2) = interleave $ deinterleave c1 p1 ++ deinterleave c2 p2
 
 -- | Applies a function to every sample in the audio stream.
 mapSamples :: (Monad m, V.Storable a, V.Storable b) =>
   (a -> b) -> AudioSource m a -> AudioSource m b
-mapSamples f (AudioSource s r c l) = AudioSource (s =$= CL.map (V.map f)) r c l
+mapSamples f (AudioSource s r c l) = AudioSource (C.mapOutput (V.map f) s) r c l
 
 -- | Multiplies all the audio samples by the given scaling factor.
 -- It is best to use this function on floating-point sample types,
@@ -237,9 +237,9 @@ dropEnd (Seconds secs) src = dropEnd (Frames $ secondsToFrames secs $ rate src) 
 -- converts it into @[[L0, L1, ...], [R0, R1, ...]]@.
 deinterleave :: (V.Storable a) => Channels -> V.Vector a -> [V.Vector a]
 deinterleave n v = do
-  let len = V.length v `div` n
+  let fms = vectorFrames v n
   i <- [0 .. n - 1]
-  return $ V.generate len $ \j -> v V.! (n * j + i)
+  return $ V.generate fms $ \j -> v V.! (n * j + i)
 
 -- | Opposite of 'deinterleave'.
 -- All the input vectors should have the same length.
@@ -253,40 +253,34 @@ interleave vs = let
 -- | Combines two audio streams to produce pairs of same-length (in frames) chunks.
 -- If one stream is shorter, its end will be padded with silence to match the longer one.
 -- This function is used to implement 'mix' and 'merge'.
-combineAudio
-  :: (Num a, V.Storable a, Monad m)
-  => Int
-  -> Int
-  -> C.Source m (V.Vector a)
-  -> C.Source m (V.Vector a)
-  -> C.Source m (V.Vector a, V.Vector a)
-combineAudio c1 c2 s1 s2 = let
-  justify src = (src =$= CL.map Just) >> forever (C.yield Nothing)
-  await' = C.await >>= \mx -> case mx of
-    Nothing -> error
-      "Data.Conduit.Audio.combineAudio: internal error! reached end of infinite stream"
-    Just x  -> return x
-  in zipSources (justify s1) (justify s2) =$= let
-    loop = await' >>= \pair -> case pair of
-      (Nothing, Nothing) -> return ()
-      (Just v1, Nothing) -> let
-        v2 = V.replicate (vectorFrames v1 c1 * c2) 0
-        in C.yield (v1, v2) >> loop
-      (Nothing, Just v2) -> let
-        v1 = V.replicate (vectorFrames v2 c2 * c1) 0
-        in C.yield (v1, v2) >> loop
-      (Just v1, Just v2) -> case compare (vectorFrames v1 c1) (vectorFrames v2 c2) of
-        EQ -> C.yield (v1, v2) >> loop
-        LT -> let
-          (v2a, v2b) = V.splitAt (vectorFrames v1 c1 * c2) v2
-          in C.yield (v1, v2a) >> await' >>= \(next1, next2) -> do
-            C.leftover (next1, Just $ v2b V.++ fromMaybe V.empty next2)
-            loop
-        GT -> let
-          (v1a, v1b) = V.splitAt (vectorFrames v2 c2 * c1) v1
-          in C.yield (v1a, v2) >> await' >>= \(next1, next2) -> do
-            C.leftover (Just $ v1b V.++ fromMaybe V.empty next1, next2)
-            loop
+combineAudio :: (Monad m, V.Storable a, V.Storable b, Num a, Num b)
+  => AudioSource m a -> AudioSource m b -> C.Source m (V.Vector a, V.Vector b)
+combineAudio src1 src2 = let
+  org1 = justify $ source $ reorganize chunkSize src1
+  org2 = justify $ source $ reorganize chunkSize src2
+  justify src = C.mapOutput Just src >> forever (C.yield Nothing)
+  in zipSources org1 org2 =$= let
+    loop = C.await >>= \mp -> case mp of
+      Nothing -> error "Data.Conduit.Audio.combineAudio: internal error! reached end of infinite stream"
+      Just p -> case p of
+        (Nothing, Nothing) -> return ()
+        (Nothing, Just v2) -> let
+          v1 = V.replicate (vectorFrames v2 (channels src2) * channels src1) 0
+          in C.yield (v1, v2) >> loop
+        (Just v1, Nothing) -> let
+          v2 = V.replicate (vectorFrames v1 (channels src1) * channels src2) 0
+          in C.yield (v1, v2) >> loop
+        (Just v1, Just v2) -> let
+          len1 = vectorFrames v1 (channels src1)
+          len2 = vectorFrames v2 (channels src2)
+          in case compare len1 len2 of
+            EQ -> C.yield (v1, v2) >> loop
+            LT -> let
+              v1' = v1 V.++ V.replicate ((len2 - len1) * channels src1) 0
+              in C.yield (v1', v2) >> loop
+            GT -> let
+              v2' = v2 V.++ V.replicate ((len1 - len2) * channels src2) 0
+              in C.yield (v1, v2') >> loop
     in loop
 
 -- See http://blog.bjornroche.com/2009/12/int-float-int-its-jungle-out-there.html
@@ -309,3 +303,21 @@ integralSample x
 -- samples in the range @[-1, 1]@.
 fractionalSample :: (Integral a, Bounded a, Fractional b) => a -> b
 fractionalSample x = fromIntegral x / fromIntegral (maxBound `asTypeOf` x)
+
+reorganizer :: (Monad m, V.Storable a) => Int -> C.Conduit (V.Vector a) m (V.Vector a)
+reorganizer samps = let
+  go = C.await >>= \ml -> case ml of
+    Nothing -> return ()
+    Just v  -> case compare samps $ V.length v of
+      EQ -> C.yield v >> go
+      LT -> case V.splitAt samps v of
+        (v1, v2) -> C.yield v1 >> C.leftover v2 >> go
+      GT -> C.await >>= \m2 -> case m2 of
+        Nothing -> C.yield v
+        Just v' -> C.leftover (v V.++ v') >> go
+  in go
+
+-- | Modifies the source so that it outputs vectors of a consistent length in frames.
+-- The last vector from the new source may be less than the given length.
+reorganize :: (Monad m, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
+reorganize fms src = src { source = source src =$= reorganizer (fms * channels src) }
