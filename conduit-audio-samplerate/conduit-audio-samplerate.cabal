@@ -25,7 +25,7 @@ library
   build-depends:
     base >= 4.6 && < 4.9
     , conduit
-    , conduit-audio >= 0.1 && < 0.2
+    , conduit-audio >= 0.1 && < 0.3
     , resourcet
     , transformers >= 0.3 && < 0.5
     , vector

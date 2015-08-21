@@ -12,7 +12,7 @@ library
   build-depends:
     base >= 4.7 && < 4.9
     , al
-    , conduit-audio
+    , conduit-audio >= 0.1 && < 0.3
     , resourcet
     , transformers >= 0.4
     , vector
