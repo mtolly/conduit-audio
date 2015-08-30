@@ -115,7 +115,7 @@ sine freq (Frames fms) r = AudioSource (go 0) r 1 fms where
 concatenate :: (Monad m) => AudioSource m a -> AudioSource m a -> AudioSource m a
 concatenate (AudioSource s1 r1 c1 l1) (AudioSource s2 r2 c2 l2)
   | r1 /= r2 = error $
-    printf "Data.Conduit.Audio.concatenate: mismatched rates (%d and %d)" r1 r2
+    printf "Data.Conduit.Audio.concatenate: mismatched rates (%f and %f)" r1 r2
   | c1 /= c2 = error $
     printf "Data.Conduit.Audio.concatenate: mismatched channel counts (%d and %d)" c1 c2
   | otherwise = AudioSource (s1 >> s2) r1 c1 (l1 + l2)
@@ -142,7 +142,7 @@ splitChannels (AudioSource src r c l) = do
 mix :: (Monad m, Num a, V.Storable a) => AudioSource m a -> AudioSource m a -> AudioSource m a
 mix a1@(AudioSource _ r1 c1 l1) a2@(AudioSource _ r2 c2 l2)
   | r1 /= r2 = error $
-    printf "Data.Conduit.Audio.mix: mismatched rates (%d and %d)" r1 r2
+    printf "Data.Conduit.Audio.mix: mismatched rates (%f and %f)" r1 r2
   | c1 /= c2 = error $
     printf "Data.Conduit.Audio.mix: mismatched channel counts (%d and %d)" c1 c2
   | otherwise = AudioSource
@@ -154,7 +154,7 @@ mix a1@(AudioSource _ r1 c1 l1) a2@(AudioSource _ r2 c2 l2)
 merge :: (Monad m, Num a, V.Storable a) => AudioSource m a -> AudioSource m a -> AudioSource m a
 merge a1@(AudioSource _ r1 c1 l1) a2@(AudioSource _ r2 c2 l2)
   | r1 /= r2 = error $
-    printf "Data.Conduit.Audio.merge: mismatched rates (%d and %d)" r1 r2
+    printf "Data.Conduit.Audio.merge: mismatched rates (%f and %f)" r1 r2
   | otherwise = AudioSource
     (C.mapOutput mergeChunk $ combineAudio a1 a2)
     r1 (c1 + c2) (max l1 l2)
