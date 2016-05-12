@@ -1,8 +1,8 @@
 name:                 conduit-audio-sndfile
-version:              0.1.1
+version:              0.1.2
 author:               Michael Tolly
 maintainer:           miketolly@gmail.com
-license:              LGPL
+license:              BSD3
 license-file:         LICENSE
 category:             Sound
 build-type:           Simple
@@ -13,6 +13,10 @@ synopsis:             conduit-audio interface to the libsndfile audio file libra
 description:
   A wrapper around @hsndfile@ (binding to the @libsndfile@ library)
   for use with @conduit-audio@, to load a wide variety of audio files as streams.
+  .
+  @libsndfile@ is LGPL licensed, so you may dynamically link to it from a closed-source program.
+  However, note that @hsndfile@ is also LGPL licensed,
+  so if your program is closed-source you also must dynamically link @hsndfile@.
 
 library
   exposed-modules:

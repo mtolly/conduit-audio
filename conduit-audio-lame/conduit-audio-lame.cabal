@@ -1,8 +1,8 @@
 name:                 conduit-audio-lame
-version:              0.1.1
+version:              0.1.2
 author:               Michael Tolly
 maintainer:           miketolly@gmail.com
-license:              LGPL
+license:              BSD3
 license-file:         LICENSE
 category:             Sound
 build-type:           Simple
@@ -17,6 +17,8 @@ description:
   Requires the LAME library.
   On Ubuntu, @apt-get install libmp3lame-dev@;
   on Mac with Homebrew, @brew install lame@.
+  .
+  LAME is LGPL licensed, so you may dynamically link to it from a closed-source program.
 
 library
   exposed-modules:
