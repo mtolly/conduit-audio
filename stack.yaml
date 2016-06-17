@@ -4,4 +4,4 @@ packages:
 - conduit-audio-lame/
 - conduit-audio-samplerate/
 - conduit-audio-sndfile/
-resolver: lts-5.10
+resolver: nightly-2016-06-17
