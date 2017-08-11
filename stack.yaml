@@ -4,4 +4,7 @@ packages:
 - conduit-audio-lame/
 - conduit-audio-samplerate/
 - conduit-audio-sndfile/
-resolver: nightly-2016-06-17
+resolver: nightly-2017-08-11
+extra-deps:
+- hsndfile-0.8.0
+- hsndfile-vector-0.5.2
