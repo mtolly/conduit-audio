@@ -9,14 +9,14 @@ import Foreign.C
 
 {#context prefix="lame_"#}
 
-{#fun init as ^ {} -> `LAME' #}
+{#fun init as ^ {} -> `LAME' id #}
 
 <%
 def get(cname, hstype, toHs: '')
-  "{\#fun get_#{cname} as ^ { `LAME' } -> `#{hstype}' #{toHs} \#}"
+  "{\#fun get_#{cname} as ^ { id `LAME' } -> `#{hstype}' #{toHs} \#}"
 end
 def set(cname, hstype, fromHs: '')
- "{\#fun set_#{cname} as ^ { `LAME', #{fromHs} `#{hstype}' } -> `Int' \#}"
+ "{\#fun set_#{cname} as ^ { id `LAME', #{fromHs} `#{hstype}' } -> `Int' \#}"
 end
 def param(cname, hstype, fromHs: '', toHs: '')
   get(cname, hstype, toHs: toHs) + "\n" +  set(cname, hstype, fromHs: fromHs)
@@ -57,8 +57,8 @@ toCEnum = toEnum . fromIntegral
 <%= param 'brate', 'Int' %>
 <%= param 'compression_ratio', 'Float' %>
 
-{#fun set_preset as ^ { `LAME', `Int' } -> `Int' #}
-{#fun set_asm_optimizations as ^ { `LAME', `Int', `Int' } -> `Int' #}
+{#fun set_preset as ^ { id `LAME', `Int' } -> `Int' #}
+{#fun set_asm_optimizations as ^ { id `LAME', `Int', `Int' } -> `Int' #}
 
 <%= param 'copyright', 'Bool' %>
 <%= param 'original', 'Bool' %>
@@ -103,7 +103,7 @@ toCEnum = toEnum . fromIntegral
 <%= get 'noclipGainChange', 'Int' %>
 <%= get 'noclipScale', 'Float' %>
 
-{#fun init_params as ^ { `LAME' } -> `Int' #}
+{#fun init_params as ^ { id `LAME' } -> `Int' #}
 
 <% %w{lame_version lame_short_version lame_very_short_version
   psy_version lame_url lame_os_bitness}.each do |f| %>
@@ -112,14 +112,14 @@ toCEnum = toEnum . fromIntegral
 
 -- TODO: get_lame_version_numerical
 
-{#fun print_config as ^ { `LAME' } -> `()' #}
-{#fun print_internals as ^ { `LAME' } -> `()' #}
+{#fun print_config as ^ { id `LAME' } -> `()' #}
+{#fun print_internals as ^ { id `LAME' } -> `()' #}
 
 <%
 def encoder(cname, sampletype)
 """
 {\#fun #{cname} as ^
-  { `LAME'
+  { id `LAME'
   , id `Ptr #{sampletype}' -- ^ PCM data for left channel
   , id `Ptr #{sampletype}' -- ^ PCM data for right channel
   , `Int' -- ^ number of samples per channel
@@ -134,7 +134,7 @@ end
 def encoderInterleaved(cname, sampletype)
 """
 {\#fun #{cname} as ^
-  { `LAME'
+  { id `LAME'
   , id `Ptr #{sampletype}' -- ^ PCM data for left and right channel, interleaved
   , `Int' -- ^ number of samples per channel, /not/ number of samples overall
   , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
@@ -156,30 +156,30 @@ end
 <%= encoder 'encode_buffer_int', 'CInt' %>
 
 {#fun encode_flush as ^
-  { `LAME'
+  { id `LAME'
   , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
   , `Int' -- number of valid octets in this stream
   } -> `Int' #}
 
 {#fun encode_flush_nogap as ^
-  { `LAME'
+  { id `LAME'
   , id `Ptr CUChar' -- ^ pointer to encoded MP3 stream
   , `Int' -- number of valid octets in this stream
   } -> `Int' #}
 
 {#fun init_bitstream as ^
-  { `LAME'
+  { id `LAME'
   } -> `Int' #}
 
 -- TODO: some simple statistics
 
 {#fun get_lametag_frame as ^
-  { `LAME'
+  { id `LAME'
   , id `Ptr CUChar'
   , fromIntegral `CSize'
   } -> `CSize' fromIntegral #}
 
-{#fun close as ^ { `LAME' } -> `Int' #}
+{#fun close as ^ { id `LAME' } -> `Int' #}
 
 {#enum lame_errorcodes_t as ErrorCode {underscoreToCase}
   deriving (Eq, Ord, Show, Read, Bounded) #}

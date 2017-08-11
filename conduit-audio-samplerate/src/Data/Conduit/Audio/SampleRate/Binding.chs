@@ -35,27 +35,27 @@ inThisModule = ("Data.Conduit.Audio.SampleRate.Binding." ++)
   { convTypeToC `ConverterType'
   , `Int'
   , id `Ptr CInt'
-  } -> `State' #}
+  } -> `State' id #}
 
 -- SRC_STATE* src_delete (SRC_STATE *state) ;
 {#fun delete as deleteRaw
-  { `State'
-  } -> `State' #}
+  { id `State'
+  } -> `State' id #}
 
 -- int src_process (SRC_STATE *state, SRC_DATA *data) ;
 {#fun process as processRaw
-  { `State'
+  { id `State'
   , `Data'
   } -> `Int' #}
 
 -- int src_reset (SRC_STATE *state) ;
 {#fun reset as resetRaw
-  { `State'
+  { id `State'
   } -> `Int' #}
 
 -- int src_set_ratio (SRC_STATE *state, double new_ratio) ;
 {#fun set_ratio as setRatioRaw
-  { `State'
+  { id `State'
   , `Double'
   } -> `Int' #}
 
