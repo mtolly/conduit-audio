@@ -4,7 +4,9 @@ packages:
 - conduit-audio-lame/
 - conduit-audio-samplerate/
 - conduit-audio-sndfile/
+- conduit-audio-mpg123/
 resolver: nightly-2017-08-11
 extra-deps:
 - hsndfile-0.8.0
 - hsndfile-vector-0.5.2
+- mpg123-bindings-0.1.0.0
