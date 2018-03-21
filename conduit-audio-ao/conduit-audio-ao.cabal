@@ -1,5 +1,5 @@
 name:                 conduit-audio-ao
-version:              0.1
+version:              0.1.1
 author:               Michael Tolly
 maintainer:           miketolly@gmail.com
 category:             Sound
@@ -13,7 +13,7 @@ library
     Data.Conduit.Audio.AO
     Data.Conduit.Audio.AO.Binding
   build-depends:
-    base >= 4.6 && < 4.10
+    base >= 4.6 && < 4.12
     , conduit
     , conduit-audio >= 0.1 && < 0.3
     , resourcet
