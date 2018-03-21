@@ -1,5 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-module Data.Conduit.Audio.Mpg123 where
+module Data.Conduit.Audio.Mpg123
+( sourceMpg
+, MpgFormat(..)
+) where
 
 import qualified Codec.Mpg123.Raw             as M
 import           Control.Exception            (bracket, bracket_)
@@ -30,6 +33,10 @@ instance MpgFormat Int16 where
 instance MpgFormat Int32 where
   mpgFormat _ = M.mpg123_enc_signed_32
 
+{-
+
+-- disabling these because CA functions like mix don't work right with unsigned samples
+
 instance MpgFormat Word8 where
   mpgFormat _ = M.mpg123_enc_unsigned_8
 
@@ -38,6 +45,8 @@ instance MpgFormat Word16 where
 
 instance MpgFormat Word32 where
   mpgFormat _ = M.mpg123_enc_unsigned_32
+
+-}
 
 sourceMpg
   :: forall m a
