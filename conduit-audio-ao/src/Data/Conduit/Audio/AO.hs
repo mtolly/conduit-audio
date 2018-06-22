@@ -3,16 +3,16 @@ module Data.Conduit.Audio.AO
 , playSource
 ) where
 
-import qualified Data.Conduit as C
-import Data.Conduit ((.|))
-import Data.Conduit.Audio
+import           Control.Exception             (bracket_)
+import           Control.Monad                 (void)
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Resource
+import           Data.Conduit                  ((.|))
+import qualified Data.Conduit                  as C
+import           Data.Conduit.Audio
 import qualified Data.Conduit.Audio.AO.Binding as AO
-import Control.Monad.Trans.Resource
-import Control.Monad.IO.Class
-import Foreign hiding (void)
-import qualified Data.Vector.Storable as V
-import Control.Monad (void)
-import Control.Exception (bracket_)
+import qualified Data.Vector.Storable          as V
+import           Foreign                       hiding (void)
 
 withAO :: IO a -> IO a
 withAO = bracket_ AO.initialize AO.shutdown

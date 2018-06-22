@@ -24,13 +24,13 @@ module Data.Conduit.Audio
 , reorganize
 ) where
 
-import qualified Data.Vector.Storable as V
-import qualified Data.Conduit as C
-import Data.Conduit ((.|))
-import qualified Data.Conduit.List as CL
-import Data.Conduit.Internal (zipSources)
-import Control.Monad (replicateM_, forever, when)
-import Text.Printf (printf)
+import           Control.Monad         (forever, replicateM_, when)
+import           Data.Conduit          ((.|))
+import qualified Data.Conduit          as C
+import           Data.Conduit.Internal (zipSources)
+import qualified Data.Conduit.List     as CL
+import qualified Data.Vector.Storable  as V
+import           Text.Printf           (printf)
 
 -- | An abstraction of a stream of audio. Inside is a Conduit 'C.Source' which
 -- loads or generates smallish chunks of audio on demand. @m@ is the 'Monad'

@@ -3,17 +3,17 @@ module Data.Conduit.Audio.Sndfile
 , sinkSnd, sinkSndWithHandle
 ) where
 
-import Data.Conduit.Audio
-import qualified Data.Conduit as C
-import Data.Conduit ((.|))
-import qualified Data.Conduit.List as CL
-import qualified Sound.File.Sndfile as Snd
+import           Control.Monad                    (void)
+import           Control.Monad.Fix                (fix)
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Class        (lift)
+import           Control.Monad.Trans.Resource     (MonadResource)
+import           Data.Conduit                     ((.|))
+import qualified Data.Conduit                     as C
+import           Data.Conduit.Audio
+import qualified Data.Conduit.List                as CL
+import qualified Sound.File.Sndfile               as Snd
 import qualified Sound.File.Sndfile.Buffer.Vector as SndBuf
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Class (lift)
-import Control.Monad (void)
-import Control.Monad.Fix (fix)
-import Control.Monad.Trans.Resource (MonadResource)
 
 -- | Uses @libsndfile@ to load an audio file as a stream.
 sourceSnd

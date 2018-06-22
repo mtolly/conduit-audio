@@ -3,19 +3,19 @@ Uses the LAME library to write audio streams to MP3 files.
 -}
 module Data.Conduit.Audio.LAME where
 
-import qualified Data.Conduit.Audio as A
+import           Control.Monad                   (unless, when)
+import           Control.Monad.Fix               (fix)
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Class       (lift)
+import           Control.Monad.Trans.Resource
+import qualified Data.ByteString                 as B
+import           Data.Conduit                    ((.|))
+import qualified Data.Conduit                    as C
+import qualified Data.Conduit.Audio              as A
 import qualified Data.Conduit.Audio.LAME.Binding as L
-import qualified Data.Conduit as C
-import Data.Conduit ((.|))
-import Control.Monad.Trans.Resource
-import Control.Monad.IO.Class
-import Control.Monad (when, unless)
-import Control.Monad.Fix (fix)
-import qualified Data.Vector.Storable as V
-import qualified Data.ByteString as B
-import Foreign
-import qualified System.IO as IO
-import Control.Monad.Trans.Class (lift)
+import qualified Data.Vector.Storable            as V
+import           Foreign
+import qualified System.IO                       as IO
 
 -- | Saves an audio stream to an MP3 file. Uses the default VBR mode.
 sinkMP3 :: (MonadResource m) => FilePath -> A.AudioSource m Float -> m ()

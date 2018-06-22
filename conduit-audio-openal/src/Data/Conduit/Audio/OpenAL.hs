@@ -1,22 +1,22 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE NondecreasingIndentation #-}
 module Data.Conduit.Audio.OpenAL where
 
-import Sound.AL
-import Sound.ALC
-import Foreign
-import Foreign.C
-import Control.Exception (bracket)
-import Control.Concurrent (threadDelay)
-import Control.Monad.Fix (fix)
-import Control.Concurrent.MVar
-import System.IO.Unsafe (unsafePerformIO)
+import           Control.Concurrent           (threadDelay)
+import           Control.Concurrent.MVar
+import           Control.Exception            (bracket)
+import           Control.Monad.Fix            (fix)
+import           Foreign
+import           Foreign.C
+import           Sound.AL
+import           Sound.ALC
+import           System.IO.Unsafe             (unsafePerformIO)
 
-import Data.Conduit.Audio
-import Control.Monad.Trans.Resource
-import Control.Monad.IO.Class (liftIO, MonadIO)
-import Control.Concurrent (forkIO)
-import qualified Data.Vector.Storable as V
+import           Control.Concurrent           (forkIO)
+import           Control.Monad.IO.Class       (MonadIO, liftIO)
+import           Control.Monad.Trans.Resource
+import           Data.Conduit.Audio
+import qualified Data.Vector.Storable         as V
 
 makeBuffer :: (Storable a) => ALenum -> ALsizei -> V.Vector a -> IO ALuint
 makeBuffer fmt freq v = do

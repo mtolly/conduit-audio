@@ -6,16 +6,16 @@ module Data.Conduit.Audio.SampleRate
 , SRC.ConverterType(..), SRC.SRCError(..)
 ) where
 
-import Data.Conduit.Audio
+import           Control.Monad                         (when)
+import           Control.Monad.Fix                     (fix)
+import           Control.Monad.IO.Class                (liftIO)
+import           Control.Monad.Trans.Resource          (MonadResource)
+import           Data.Conduit                          ((.|))
+import qualified Data.Conduit                          as C
+import           Data.Conduit.Audio
 import qualified Data.Conduit.Audio.SampleRate.Binding as SRC
-import Control.Monad.IO.Class (liftIO)
-import qualified Data.Vector.Storable as V
-import qualified Data.Conduit as C
-import Data.Conduit ((.|))
-import Control.Monad.Fix (fix)
-import Control.Monad (when)
-import Foreign
-import Control.Monad.Trans.Resource (MonadResource)
+import qualified Data.Vector.Storable                  as V
+import           Foreign
 
 resample
   :: (MonadResource m)
@@ -68,7 +68,7 @@ resampleTo r' ctype (AudioSource s r c l) = let
             then C.leftover $ V.drop (inUsed * c) v
             -- SRC did produce some output this time, so we're fine
             else C.await >>= \mz -> case mz of
-              Nothing -> return ()
+              Nothing  -> return ()
               -- this should never happen, right?
               -- that would mean v was the last chunk, we told SRC it was the
               -- last chunk, but then it didn't use it all
