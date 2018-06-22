@@ -11,6 +11,7 @@ import qualified Data.Conduit.Audio.SampleRate.Binding as SRC
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Vector.Storable as V
 import qualified Data.Conduit as C
+import Data.Conduit ((.|))
 import Control.Monad.Fix (fix)
 import Control.Monad (when)
 import Foreign
@@ -33,7 +34,7 @@ resampleTo
 resampleTo r' ctype (AudioSource s r c l) = let
   rat = r' / r
   l' = round $ fromIntegral l * rat
-  s' = s C.=$= C.bracketP
+  s' = s .| C.bracketP
     (SRC.new ctype c)
     SRC.delete
     (\lsr -> fix $ \loop -> C.await >>= \mx -> case mx of

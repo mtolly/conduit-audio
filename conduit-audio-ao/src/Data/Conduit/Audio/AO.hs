@@ -4,6 +4,7 @@ module Data.Conduit.Audio.AO
 ) where
 
 import qualified Data.Conduit as C
+import Data.Conduit ((.|))
 import Data.Conduit.Audio
 import qualified Data.Conduit.Audio.AO.Binding as AO
 import Control.Monad.Trans.Resource
@@ -17,7 +18,7 @@ withAO :: IO a -> IO a
 withAO = bracket_ AO.initialize AO.shutdown
 
 playSource :: (MonadResource m) => AudioSource m Int16 -> m ()
-playSource src = source src C.$$ getDevice where
+playSource src = C.runConduit $ source src .| getDevice where
   getDevice = do
     devID <- liftIO AO.defaultDriverID
     let fmt = AO.SampleFormat

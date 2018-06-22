@@ -5,6 +5,7 @@ module Data.Conduit.Audio.Sndfile
 
 import Data.Conduit.Audio
 import qualified Data.Conduit as C
+import Data.Conduit ((.|))
 import qualified Data.Conduit.List as CL
 import qualified Sound.File.Sndfile as Snd
 import qualified Sound.File.Sndfile.Buffer.Vector as SndBuf
@@ -71,7 +72,7 @@ sinkSndWithHandle
   -> (Snd.Handle -> m ())
   -> AudioSource m a
   -> m ()
-sinkSndWithHandle fp fmt setup (AudioSource s r c _) = s C.$$ do
+sinkSndWithHandle fp fmt setup (AudioSource s r c _) = C.runConduit $ (s .|) $ do
   C.bracketP
     (Snd.openFile fp Snd.WriteMode $ Snd.defaultInfo
       { Snd.format     = fmt

@@ -26,7 +26,7 @@ module Data.Conduit.Audio
 
 import qualified Data.Vector.Storable as V
 import qualified Data.Conduit as C
-import Data.Conduit ((=$=))
+import Data.Conduit ((.|))
 import qualified Data.Conduit.List as CL
 import Data.Conduit.Internal (zipSources)
 import Control.Monad (replicateM_, forever, when)
@@ -38,7 +38,7 @@ import Text.Printf (printf)
 -- contained in storable vectors (and thus should be 'V.Storable').
 -- Both (signed) 'Integral' and 'Fractional' sample types are supported.
 data AudioSource m a = AudioSource
-  { source   :: C.Source m (V.Vector a)
+  { source   :: C.ConduitT () (V.Vector a) m ()
   -- ^ The stream of audio chunks; samples interleaved by channel.
   -- Each chunk can be any positive whole number of frames.
   , rate     :: Rate
@@ -181,7 +181,7 @@ fadeIn (AudioSource s r c l) = let
       fader = V.generate (V.length v) $ \j ->
         min 1 $ fromIntegral (i + quot j c) / fromIntegral l
       in C.yield (V.zipWith (*) v fader) >> go (i + vectorFrames v c)
-  in AudioSource (s =$= go 0) r c l
+  in AudioSource (s .| go 0) r c l
 
 -- | Fades the audio from start (original volume) to end (silent).
 -- This function relies on the 'frames' value stored with the stream.
@@ -193,7 +193,7 @@ fadeOut (AudioSource s r c l) = let
       fader = V.generate (V.length v) $ \j ->
         1 - (min 1 $ fromIntegral (i + quot j c) / fromIntegral l)
       in C.yield (V.zipWith (*) v fader) >> go (i + vectorFrames v c)
-  in AudioSource (s =$= go 0) r c l
+  in AudioSource (s .| go 0) r c l
 
 -- | Takes no more than the given duration of audio from the start of the stream.
 takeStart :: (Monad m, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
@@ -207,7 +207,7 @@ takeStart (Frames fms) (AudioSource src r c l) = let
         EQ -> C.yield v
         LT -> C.yield $ V.take left v
         GT -> C.yield v >> go (left - len)
-  in AudioSource (src =$= go (fms * c)) r c (min l fms)
+  in AudioSource (src .| go (fms * c)) r c (min l fms)
 
 -- | Drops the given duration of audio from the start of the stream.
 dropStart :: (Monad m, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
@@ -221,7 +221,7 @@ dropStart (Frames fms) (AudioSource src r c l) = let
         EQ -> CL.map id
         LT -> C.yield (V.drop left v) >> CL.map id
         GT -> go (left - len)
-  in AudioSource (src =$= go (fms * c)) r c (max 0 $ l - fms)
+  in AudioSource (src .| go (fms * c)) r c (max 0 $ l - fms)
 
 takeEnd, dropEnd :: (Monad m, V.Storable a) => Duration -> AudioSource m a -> AudioSource m a
 -- | Takes no more than the given duration of audio from the end of the stream.
@@ -254,12 +254,12 @@ interleave vs = let
 -- If one stream is shorter, its end will be padded with silence to match the longer one.
 -- This function is used to implement 'mix' and 'merge'.
 combineAudio :: (Monad m, V.Storable a, V.Storable b, Num a, Num b)
-  => AudioSource m a -> AudioSource m b -> C.Source m (V.Vector a, V.Vector b)
+  => AudioSource m a -> AudioSource m b -> C.ConduitT () (V.Vector a, V.Vector b) m ()
 combineAudio src1 src2 = let
   org1 = justify $ source $ reorganize chunkSize src1
   org2 = justify $ source $ reorganize chunkSize src2
   justify src = C.mapOutput Just src >> forever (C.yield Nothing)
-  in zipSources org1 org2 =$= let
+  in zipSources org1 org2 .| let
     loop = C.await >>= \mp -> case mp of
       Nothing -> error "Data.Conduit.Audio.combineAudio: internal error! reached end of infinite stream"
       Just p -> case p of
@@ -304,7 +304,7 @@ integralSample x
 fractionalSample :: (Integral a, Bounded a, Fractional b) => a -> b
 fractionalSample x = fromIntegral x / fromIntegral (maxBound `asTypeOf` x)
 
-reorganizer :: (Monad m, V.Storable a) => Int -> C.Conduit (V.Vector a) m (V.Vector a)
+reorganizer :: (Monad m, V.Storable a) => Int -> C.ConduitT (V.Vector a) (V.Vector a) m ()
 reorganizer samps = let
   go = C.await >>= \ml -> case ml of
     Nothing -> return ()
@@ -320,4 +320,4 @@ reorganizer samps = let
 -- | Modifies the source so that it outputs vectors of a consistent length in frames.
 -- The last vector from the new source may be less than the given length.
 reorganize :: (Monad m, V.Storable a) => Frames -> AudioSource m a -> AudioSource m a
-reorganize fms src = src { source = source src =$= reorganizer (fms * channels src) }
+reorganize fms src = src { source = source src .| reorganizer (fms * channels src) }

@@ -6,6 +6,7 @@ module Data.Conduit.Audio.LAME where
 import qualified Data.Conduit.Audio as A
 import qualified Data.Conduit.Audio.LAME.Binding as L
 import qualified Data.Conduit as C
+import Data.Conduit ((.|))
 import Control.Monad.Trans.Resource
 import Control.Monad.IO.Class
 import Control.Monad (when, unless)
@@ -24,7 +25,8 @@ sinkMP3 fp = sinkMP3WithHandle fp $ \lame -> liftIO $ L.check $ L.setVBR lame L.
 -- You must select a quality somewhere in the setup action,
 -- such as with 'L.setVBR'.
 sinkMP3WithHandle :: (MonadResource m) => FilePath -> (L.LAME -> m ()) -> A.AudioSource m Float -> m ()
-sinkMP3WithHandle fp setup (A.AudioSource s r c _) = (C.$$) s
+sinkMP3WithHandle fp setup (A.AudioSource s r c _) = C.runConduit
+  $ (s .|)
   $ C.bracketP L.init (L.check . L.close)
   $ \lame -> C.bracketP (IO.openBinaryFile fp IO.WriteMode) IO.hClose
     $ \fout -> do
