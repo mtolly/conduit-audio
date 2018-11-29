@@ -13,7 +13,7 @@ library
     Data.Conduit.Audio.AO
     Data.Conduit.Audio.AO.Binding
   build-depends:
-    base >= 4.6 && < 4.12
+    base >= 4.6 && < 5
     , conduit
     , conduit-audio >= 0.1 && < 0.3
     , resourcet

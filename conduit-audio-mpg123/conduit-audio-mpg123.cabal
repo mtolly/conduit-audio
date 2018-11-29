@@ -15,7 +15,7 @@ library
   exposed-modules:
     Data.Conduit.Audio.Mpg123
   build-depends:
-    base >= 4.6 && < 4.12
+    base >= 4.6 && < 5
     , conduit
     , conduit-audio >= 0.1 && < 0.3
     , mpg123-bindings

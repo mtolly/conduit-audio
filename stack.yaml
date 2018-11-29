@@ -5,7 +5,7 @@ packages:
 - conduit-audio-samplerate/
 - conduit-audio-sndfile/
 - conduit-audio-mpg123/
-resolver: nightly-2018-06-21
+resolver: nightly-2018-11-29
 extra-deps:
 - hsndfile-0.8.0
 - hsndfile-vector-0.5.2
