@@ -1,12 +1,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Data.Conduit.Audio.Mpg123
 ( sourceMpg
+, sourceMpgFrom
 , MpgFormat(..)
 ) where
 
 import qualified Codec.Mpg123.Raw             as M
 import           Control.Exception            (bracket, bracket_)
-import           Control.Monad                (unless)
+import           Control.Monad                (unless, void)
 import           Control.Monad.Fix            (fix)
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Resource (MonadResource)
@@ -14,9 +15,8 @@ import qualified Data.Conduit                 as C
 import           Data.Conduit.Audio
 import           Data.Int
 import qualified Data.Vector.Storable         as V
-import           Data.Word
-import           Foreign
-import           Foreign.C                    (peekCString, withCString)
+import           Foreign                      hiding (void)
+import           Foreign.C                    (peekCString, withCString, CInt(..))
 
 class (Storable a) => MpgFormat a where
   mpgFormat :: a -> M.Mpg123_enc_enum
@@ -33,27 +33,20 @@ instance MpgFormat Int16 where
 instance MpgFormat Int32 where
   mpgFormat _ = M.mpg123_enc_signed_32
 
-{-
-
--- disabling these because CA functions like mix don't work right with unsigned samples
-
-instance MpgFormat Word8 where
-  mpgFormat _ = M.mpg123_enc_unsigned_8
-
-instance MpgFormat Word16 where
-  mpgFormat _ = M.mpg123_enc_unsigned_16
-
-instance MpgFormat Word32 where
-  mpgFormat _ = M.mpg123_enc_unsigned_32
-
--}
-
 sourceMpg
   :: forall m a
   .  (MonadResource m, MpgFormat a)
   => FilePath
   -> IO (AudioSource m a)
-sourceMpg fin = do
+sourceMpg = sourceMpgFrom $ Frames 0
+
+sourceMpgFrom
+  :: forall m a
+  .  (MonadResource m, MpgFormat a)
+  => Duration
+  -> FilePath
+  -> IO (AudioSource m a)
+sourceMpgFrom pos fin = do
   let check ctx f = f >>= \n -> if M.Mpg123_errors n == M.mpg123_ok
         then return ()
         else M.c_mpg123_plain_strerror n >>= peekCString >>= \err -> error $ ctx ++ ": " ++ err
@@ -73,13 +66,17 @@ sourceMpg fin = do
             -- do we need to call seek before length?
             (,,,) <$> peek prate <*> peek pchans <*> peek penc <*> M.c_mpg123_length mh
   -- TODO check that len is non-negative (negative indicates error)
-  let src = C.bracketP (checkp "" $ M.c_mpg123_new nullPtr) M.c_mpg123_delete $ \mh -> do
+  let seekTo = fromIntegral $ case pos of
+        Frames  f -> f
+        Seconds s -> secondsToFrames s $ fromIntegral r
+      src = C.bracketP (checkp "" $ M.c_mpg123_new nullPtr) M.c_mpg123_delete $ \mh -> do
         C.bracketP (check "" $ withCString fin $ M.c_mpg123_open mh) (\() -> check "" $ M.c_mpg123_close mh) $ \() -> do
           bufSize <- liftIO $ do
             check "mpg123_format_none" $ M.c_mpg123_format_none mh
             check "mpg123_format" $ M.c_mpg123_format mh r chans $ M.mpg123_enc_enum fmt
             M.c_mpg123_outblock mh
           liftIO $ check "mpg123_getformat" $ M.c_mpg123_getformat mh nullPtr nullPtr nullPtr
+          liftIO $ void $ haskellGetSeekSet >>= M.c_mpg123_seek mh seekTo
           C.bracketP (mallocBytes $ fromIntegral bufSize) free $ \buf -> do
             fix $ \loop -> do
               (err, done) <- liftIO $ alloca $ \pdone -> do
@@ -94,4 +91,7 @@ sourceMpg fin = do
                   newForeignPtr finalizerFree $ castPtr buf'
                 C.yield $ V.unsafeFromForeignPtr0 fptr $ done `quot` size
                 loop
-  return $ AudioSource src (realToFrac r) (fromIntegral chans) (fromIntegral len)
+  return $ AudioSource src (fromIntegral r) (fromIntegral chans) (fromIntegral len)
+
+foreign import ccall unsafe
+  haskellGetSeekSet :: IO CInt
