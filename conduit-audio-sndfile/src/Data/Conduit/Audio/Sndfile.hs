@@ -20,7 +20,7 @@ sourceSnd
   :: (MonadResource m, Snd.Sample a)
   => FilePath
   -> IO (AudioSource m a)
-sourceSnd = sourceSndFrom $ Frames 0
+sourceSnd fp = sourceSndWithHandle fp $ \_ -> return ()
 
 -- | Lets you specify a position to start from in the file.
 sourceSndFrom
@@ -29,12 +29,18 @@ sourceSndFrom
   -- ^ Initial position to seek to in the file (more efficient than using 'dropStart')
   -> FilePath
   -> IO (AudioSource m a)
-sourceSndFrom (Seconds secs) fp = do
+sourceSndFrom pos fp = do
   info <- Snd.getFileInfo fp
-  sourceSndFrom (Frames $ secondsToFrames secs $ fromIntegral $ Snd.samplerate info) fp
-sourceSndFrom (Frames fms) fp = do
-  src <- sourceSndWithHandle fp $ \h -> liftIO $ void $ Snd.hSeek h Snd.AbsoluteSeek fms
-  return src{ frames = frames src - fms }
+  let fms = case pos of
+        Seconds secs -> secondsToFrames secs $ fromIntegral $ Snd.samplerate info
+        Frames  fms' -> fms'
+  if Snd.frames info <= fms
+    then do
+      src <- sourceSndWithHandle fp $ \_ -> return ()
+      return src{ frames = 0, source = return () `asTypeOf` source src }
+    else do
+      src <- sourceSndWithHandle fp $ \h -> liftIO $ void $ Snd.hSeek h Snd.AbsoluteSeek fms
+      return src{ frames = frames src - fms }
 
 -- | Lets you perform arbitrary setup on the @libsndfile@ handle before decoding.
 sourceSndWithHandle
