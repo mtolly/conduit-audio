@@ -28,7 +28,7 @@ sinkMP3WithHandle :: (MonadResource m) => FilePath -> (L.LAME -> m ()) -> A.Audi
 sinkMP3WithHandle fp setup (A.AudioSource s r c _) = C.runConduit
   $ (s .|)
   $ C.bracketP L.init (L.check . L.close)
-  $ \lame -> C.bracketP (IO.openBinaryFile fp IO.WriteMode) IO.hClose
+  $ \lame -> C.bracketP (IO.openBinaryFile fp IO.ReadWriteMode) IO.hClose
     $ \fout -> do
       let o = liftIO . L.check
       o $ L.setInSamplerate lame $ round r
@@ -44,9 +44,10 @@ sinkMP3WithHandle fp setup (A.AudioSource s r c _) = C.runConduit
             B.packCStringLen (buf, len)
           B.hPutStr fout bs
           IO.hSeek fout IO.AbsoluteSeek 0
-          tags <- allocaArray 100000 $ \buf -> do
-            len <- L.getLametagFrame lame (castPtr buf) 100000
-            when (len < 0) $ err "couldn't get lame tag frame (buffer too small)"
+          let bufSize = 100000
+          tags <- allocaArray (fromIntegral bufSize) $ \buf -> do
+            len <- L.getLametagFrame lame (castPtr buf) bufSize
+            when (len > bufSize) $ err "couldn't get lame tag frame (buffer too small)"
             B.packCStringLen (buf, fromIntegral len)
           B.hPutStr fout tags
         Just v -> do
